@@ -1,0 +1,39 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            # Navigate to the backend directory
+            cd /home/afeej/academics/backend
+
+            # Pull the latest changes
+            git pull origin main
+
+            # Install/Update Dependencies
+            composer install --no-dev --optimize-autoloader
+
+            # Run Migrations
+            
+
+            # Optimize Cache
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            
+            # Restart Queue (optional, but good practice)
+            # php artisan queue:restart
