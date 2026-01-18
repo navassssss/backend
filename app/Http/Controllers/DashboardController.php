@@ -32,8 +32,14 @@ class DashboardController extends Controller
                 'color' => 'bg-primary-light text-primary'
             ],
             [
+                'label' => 'Total Students',
+                'value' => \App\Models\Student::count(),
+                'icon' => 'GraduationCap',
+                'color' => 'bg-info-light text-info'
+            ],
+            [
                 'label' => 'Active Tasks',
-                'value' => Task::where('status', '!=', 'completed')->count(), // Global active tasks or created by principal? Assuming global for oversight
+                'value' => Task::where('status', '!=', 'completed')->count(), 
                 'icon' => 'CheckSquare',
                 'color' => 'bg-accent-light text-accent'
             ],
@@ -47,6 +53,12 @@ class DashboardController extends Controller
                 'label' => 'Pending Reports',
                 'value' => \App\Models\Report::where('status', 'submitted')->count(),
                 'icon' => 'FileText',
+                'color' => 'bg-warning-light text-warning-foreground'
+            ],
+            [
+                'label' => 'Pending Reviews',
+                'value' => \App\Models\Achievement::where('status', 'pending')->count(),
+                'icon' => 'Trophy',
                 'color' => 'bg-warning-light text-warning-foreground'
             ]
         ];

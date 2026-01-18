@@ -134,11 +134,31 @@ class CCESubmissionController extends Controller
     public function studentMarks(Request $request)
     {
         $classId = $request->query('class_id');
+        $studentId = $request->query('student_id');
+        $search = $request->query('search');
+        $page = $request->query('page', 1);
+        $perPage = $request->query('per_page', 10);
         
         $query = Student::with(['user', 'classRoom']);
         
         if ($classId) {
             $query->where('class_id', $classId);
+        }
+        
+        if ($studentId) {
+            $query->where('id', $studentId);
+        }
+        
+        // Add search functionality
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                // Search in user name
+                $q->whereHas('user', function($userQuery) use ($search) {
+                    $userQuery->where('name', 'like', '%' . $search . '%');
+                })
+                // OR search in student roll number
+                ->orWhere('roll_number', 'like', '%' . $search . '%');
+            });
         }
         
         $students = $query->get()->map(function($student) {
@@ -181,6 +201,32 @@ class CCESubmissionController extends Controller
             ];
         });
         
-        return response()->json($students);
+        // Calculate stats from all filtered results
+        $allSubjects = [];
+        $totalPercentageSum = 0;
+        foreach ($students as $student) {
+            foreach ($student['subjectMarks'] as $subjectName => $marks) {
+                $allSubjects[$subjectName] = true;
+            }
+            $totalPercentageSum += $student['overallPercentage'];
+        }
+        
+        // Paginate the results
+        $total = $students->count();
+        $lastPage = ceil($total / $perPage);
+        $paginatedStudents = $students->slice(($page - 1) * $perPage, $perPage)->values();
+        
+        return response()->json([
+            'data' => $paginatedStudents,
+            'current_page' => (int)$page,
+            'last_page' => (int)$lastPage,
+            'per_page' => (int)$perPage,
+            'total' => $total,
+            'stats' => [
+                'total_students' => $total,
+                'total_subjects' => count($allSubjects),
+                'average_percentage' => $total > 0 ? round($totalPercentageSum / $total, 2) : 0
+            ]
+        ]);
     }
 }

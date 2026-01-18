@@ -44,11 +44,11 @@ class FeeManagementController extends Controller
             });
         }
 
-        // Get all matching students to calculate their status
-        $allMatchingStudents = $query->get();
+        // OPTIMIZATION: Get paginated students FIRST, then calculate status only for visible students
+        $paginatedStudents = $query->paginate($perPage, ['*'], 'page', $page);
         
-        // Calculate status for each student
-        $studentsWithStatus = $allMatchingStudents->map(function ($student) {
+        // Calculate status for ONLY the current page students
+        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) {
             $status = $this->feeService->getStudentMonthlyStatus($student->id);
             
             // Filter to only include months up to current month for expected amount
@@ -102,103 +102,107 @@ class FeeManagementController extends Controller
                 'class_id' => $student->class_id,
                 'class_name' => $student->class->name,
                 'total_pending' => $totalPending,
+                'total_paid' => $totalPaid,
                 'last_payment_date' => $lastPayment?->payment_date,
                 'status' => $overallStatus,
             ];
         });
         
-        // Apply status filter
+        // Apply status filter if needed
         if ($statusFilter !== 'all') {
             $studentsWithStatus = $studentsWithStatus->filter(function ($student) use ($statusFilter) {
                 return $student['status'] === $statusFilter;
             })->values();
         }
-        
-        // Get total after status filtering
-        $total = $studentsWithStatus->count();
-        
-        // Apply pagination
-        $students = $studentsWithStatus->slice(($page - 1) * $perPage, $perPage)->values();
-
-        // Calculate overall status counts for ALL students (not just current page)
-        $allStudents = Student::with(['user', 'class']);
-        
-        if ($request->has('class_id')) {
-            $allStudents->where('class_id', $request->class_id);
-        }
-        
-        if (!empty($search)) {
-            $allStudents->where(function($q) use ($search) {
-                $q->where('username', 'like', "%{$search}%")
-                  ->orWhereHas('user', function($userQuery) use ($search) {
-                      $userQuery->where('name', 'like', "%{$search}%");
-                  });
-            });
-        }
-        
-        $allStudentsData = $allStudents->get();
-        $paidCount = 0;
-        $partialCount = 0;
-        $dueCount = 0;
-        $overpaidCount = 0;
-        
-        foreach ($allStudentsData as $student) {
-            $status = $this->feeService->getStudentMonthlyStatus($student->id);
-            
-            // Filter to only include months up to current month for expected amount
-            $currentYear = now()->year;
-            $currentMonth = now()->month;
-            $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                if ($month['year'] < $currentYear) {
-                    return true;
-                } elseif ($month['year'] == $currentYear) {
-                    return $month['month'] <= $currentMonth;
-                }
-                return false;
-            });
-            
-            // Calculate expected for past/current months
-            $totalExpected = $statusUpToCurrent->sum('payable');
-            
-            // Get ALL payments including future months
-            $allStatus = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                // Include past/current months
-                if ($month['year'] < $currentYear || ($month['year'] == $currentYear && $month['month'] <= $currentMonth)) {
-                    return true;
-                }
-                // Include future months only if they have payments
-                if ($month['paid'] > 0) {
-                    return true;
-                }
-                return false;
-            });
-            $totalPaid = $allStatus->sum('paid');
-            
-            // Pending is expected minus paid (can be negative if overpaid)
-            $totalPending = $totalExpected - $totalPaid;
-            
-            if ($totalPending < 0) {
-                $overpaidCount++;
-            } elseif ($totalPending == 0) {
-                $paidCount++;
-            } else {
-                $dueCount++;
-            }
-        }
 
         return response()->json([
-            'data' => $students,
-            'current_page' => $page,
+            'data' => $studentsWithStatus->values()->all(),
+            'current_page' => $paginatedStudents->currentPage(),
             'per_page' => $perPage,
-            'total' => $total,
-            'last_page' => ceil($total / $perPage),
-            'status_counts' => [
+            'total' => $paginatedStudents->total(),
+            'last_page' => $paginatedStudents->lastPage(),
+        ]);
+    }
+
+    /**
+     * Get status counts for all students (cached for performance)
+     */
+    public function getStatusCounts(Request $request)
+    {
+        $search = $request->input('search', '');
+        $classId = $request->input('class_id');
+        
+        // Create cache key based on filters
+        $cacheKey = 'fee_status_counts_' . md5($search . '_' . $classId);
+        
+        // Cache for 5 minutes
+        return \Cache::remember($cacheKey, 300, function () use ($request, $search, $classId) {
+            $countQuery = Student::with(['user', 'class']);
+            
+            if ($classId) {
+                $countQuery->where('class_id', $classId);
+            }
+            
+            if (!empty($search)) {
+                $countQuery->where(function($q) use ($search) {
+                    $q->where('username', 'like', "%{$search}%")
+                      ->orWhereHas('user', function($userQuery) use ($search) {
+                          $userQuery->where('name', 'like', "%{$search}%");
+                      });
+                });
+            }
+            
+            $allStudentsForCount = $countQuery->get();
+            $paidCount = 0;
+            $partialCount = 0;
+            $dueCount = 0;
+            $overpaidCount = 0;
+            
+            foreach ($allStudentsForCount as $student) {
+                $status = $this->feeService->getStudentMonthlyStatus($student->id);
+                
+                $currentYear = now()->year;
+                $currentMonth = now()->month;
+                $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
+                    if ($month['year'] < $currentYear) {
+                        return true;
+                    } elseif ($month['year'] == $currentYear) {
+                        return $month['month'] <= $currentMonth;
+                    }
+                    return false;
+                });
+                
+                $totalExpected = $statusUpToCurrent->sum('payable');
+                
+                $allStatus = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
+                    if ($month['year'] < $currentYear || ($month['year'] == $currentYear && $month['month'] <= $currentMonth)) {
+                        return true;
+                    }
+                    if ($month['paid'] > 0) {
+                        return true;
+                    }
+                    return false;
+                });
+                $totalPaid = $allStatus->sum('paid');
+                
+                $totalPending = $totalExpected - $totalPaid;
+                
+                if ($totalPending < 0) {
+                    $overpaidCount++;
+                } elseif ($totalPending == 0) {
+                    $paidCount++;
+                } else {
+                    $dueCount++;
+                }
+            }
+
+            return response()->json([
                 'paid' => $paidCount,
                 'partial' => $partialCount,
                 'due' => $dueCount,
                 'overpaid' => $overpaidCount,
-            ],
-        ]);
+            ]);
+        });
     }
 
     /**
@@ -271,6 +275,7 @@ class FeeManagementController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'payment_date' => 'required|date',
             'remarks' => 'nullable|string',
+            'receipt_issued' => 'nullable|boolean',
         ]);
 
         try {
@@ -279,7 +284,8 @@ class FeeManagementController extends Controller
                 $validated['amount'],
                 $validated['payment_date'],
                 $request->user()->id,
-                $validated['remarks'] ?? null
+                $validated['remarks'] ?? null,
+                $validated['receipt_issued'] ?? false
             );
 
             return response()->json([
@@ -471,26 +477,36 @@ class FeeManagementController extends Controller
      */
     public function getDailyReport($date)
     {
-        $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy'])
+        $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
             ->whereDate('payment_date', $date)
+            ->latest() // Order by most recent first
             ->get();
 
         $report = $payments->map(function ($payment) {
+            // Format allocations as "Jan(200), Feb(100)"
+            $allocations = $payment->allocations->map(function ($allocation) {
+                $monthName = date('M', mktime(0, 0, 0, $allocation->month, 10)); // Short month name
+                $amount = (float) $allocation->allocated_amount;
+                return "{$monthName}({$amount})";
+            })->implode(', '); // Join with comma
+
             return [
                 'paymentId' => $payment->id,
-                'studentName' => $payment->student->user->name,
-                'className' => $payment->student->class->name,
-                'amount' => $payment->paid_amount,
-                'receiptIssued' => $payment->receipt_issued,
+                'studentName' => $payment->student->user->name ?? 'Unknown',
+                'className' => $payment->student->class->name ?? 'Unknown',
+                'amount' => (float) $payment->paid_amount,
+                'receiptIssued' => (bool) $payment->receipt_issued,
                 'remarks' => $payment->remarks,
-                'enteredBy' => $payment->enteredBy->name,
+                'enteredBy' => $payment->enteredBy->name ?? 'System',
+                'time' => $payment->created_at ? $payment->created_at->format('h:i A') : '-', // "10:30 AM"
+                'allocations' => $allocations,
             ];
         });
 
         return response()->json([
             'date' => $date,
             'total_students' => $payments->unique('student_id')->count(),
-            'total_amount' => $payments->sum('paid_amount'),
+            'total_amount' => (float) $payments->sum('paid_amount'),
             'payments' => $report,
         ]);
     }

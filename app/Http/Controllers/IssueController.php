@@ -53,12 +53,13 @@ class IssueController extends Controller
 
         $data = $request->validate([
             'title' => 'required|string|min:3',
-            'description' => 'required|string|min:5',
+            'description' => 'required|string',
             'category_id' => 'nullable|exists:issue_categories,id',
             'priority' => 'required|in:low,medium,high',
             'visibility' => 'nullable|in:public,restricted',
             'duty_id' => 'nullable|exists:duties,id',
             'related_teacher_id' => 'nullable|exists:users,id',
+            'responsible_user_id' => 'nullable|exists:users,id',
             'task_id' => 'nullable|exists:tasks,id',
         ]);
 
@@ -84,7 +85,7 @@ class IssueController extends Controller
 
         return response()->json([
             'message' => 'Issue created successfully',
-            'issue' => $issue->load('category', 'creator'),
+            'issue' => $issue->load('category', 'creator', 'responsibleUser'),
         ], 201);
     }
 

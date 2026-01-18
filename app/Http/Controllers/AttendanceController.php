@@ -99,7 +99,30 @@ class AttendanceController extends Controller
                 ];
             });
 
-        return response()->json($records);
+        // Calculate unique student counts across all sessions for today
+        $allRecords = AttendanceRecord::whereHas('attendance', function($q) use ($date) {
+            $q->where('date', $date);
+        })->with(['student', 'attendance'])->get();
+        
+        // Separate morning and afternoon records
+        $morningRecords = $allRecords->filter(fn($r) => $r->attendance->session === 'morning');
+        $afternoonRecords = $allRecords->filter(fn($r) => $r->attendance->session === 'afternoon');
+        
+        // Count present students for each session
+        $morningPresent = $morningRecords->where('status', 'present')->count();
+        $morningAbsent = $morningRecords->where('status', 'absent')->count();
+        $afternoonPresent = $afternoonRecords->where('status', 'present')->count();
+        $afternoonAbsent = $afternoonRecords->where('status', 'absent')->count();
+
+        return response()->json([
+            'records' => $records,
+            'todayStats' => [
+                'morningPresent' => $morningPresent,
+                'morningAbsent' => $morningAbsent,
+                'afternoonPresent' => $afternoonPresent,
+                'afternoonAbsent' => $afternoonAbsent
+            ]
+        ]);
     }
 
     // Get specific attendance details

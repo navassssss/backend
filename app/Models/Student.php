@@ -26,7 +26,7 @@ class Student extends Model
         'opening_balance' => 'decimal:2',
     ];
 
-    protected $appends = ['stars', 'monthly_points'];
+    protected $appends = ['stars', 'monthly_points', 'name'];
 
     /**
      * Relationships
@@ -37,6 +37,11 @@ class Student extends Model
     }
 
     public function class()
+    {
+        return $this->belongsTo(ClassRoom::class, 'class_id');
+    }
+
+    public function classRoom()
     {
         return $this->belongsTo(ClassRoom::class, 'class_id');
     }
@@ -73,6 +78,13 @@ class Student extends Model
                 ->where('month', now()->month)
                 ->where('year', now()->year)
                 ->sum('points')
+        );
+    }
+
+    protected function name(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->user?->name ?? 'Unknown'
         );
     }
 

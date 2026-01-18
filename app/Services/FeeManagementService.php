@@ -18,7 +18,8 @@ class FeeManagementService
         float $amount,
         string $paymentDate,
         int $enteredBy,
-        ?string $remarks = null
+        ?string $remarks = null,
+        bool $receiptIssued = false
     ): array {
         DB::beginTransaction();
         
@@ -30,7 +31,7 @@ class FeeManagementService
                 'payment_date' => $paymentDate,
                 'entered_by' => $enteredBy,
                 'remarks' => $remarks,
-                'receipt_issued' => false,
+                'receipt_issued' => $receiptIssued,
             ]);
             
             // 2. Get unpaid months (oldest first)
@@ -342,6 +343,57 @@ class FeeManagementService
                 'balance' => max(0, $balance),
                 'status' => $monthStatus,
             ];
+        }
+        
+        // IMPORTANT: Ensure current month is always included
+        $currentYear = now()->year;
+        $currentMonth = now()->month;
+        
+        // Check if current month already exists in status
+        $currentMonthExists = collect($status)->contains(function ($item) use ($currentYear, $currentMonth) {
+            return $item['year'] == $currentYear && $item['month'] == $currentMonth;
+        });
+        
+        // If current month doesn't exist, add it with expected amount from latest fee plan
+        if (!$currentMonthExists) {
+            // Get the most recent fee plan to determine expected amount
+            $latestPlan = MonthlyFeePlan::where('student_id', $studentId)
+                ->orderBy('year', 'desc')
+                ->orderBy('month', 'desc')
+                ->first();
+            
+            // Use latest plan amount, or 0 if no plan exists
+            $expectedAmount = $latestPlan ? (float) $latestPlan->payable_amount : 0.0;
+            
+            // Check if there are any payments for current month
+            $currentMonthPaid = FeePaymentAllocation::where('student_id', $studentId)
+                ->where('year', $currentYear)
+                ->where('month', $currentMonth)
+                ->sum('allocated_amount');
+            
+            $balance = max(0, $expectedAmount - $currentMonthPaid);
+            
+            $monthStatus = 'unpaid';
+            if ($balance <= 0) $monthStatus = 'paid';
+            elseif ($currentMonthPaid > 0) $monthStatus = 'partial';
+            
+            $status[] = [
+                'year' => $currentYear,
+                'month' => $currentMonth,
+                'month_name' => date('F Y', mktime(0, 0, 0, $currentMonth, 1, $currentYear)),
+                'payable' => $expectedAmount,
+                'paid' => (float) $currentMonthPaid,
+                'balance' => $balance,
+                'status' => $monthStatus,
+            ];
+            
+            // Re-sort the status array by year and month
+            usort($status, function ($a, $b) {
+                if ($a['year'] != $b['year']) {
+                    return $a['year'] - $b['year'];
+                }
+                return $a['month'] - $b['month'];
+            });
         }
         
         return $status;
