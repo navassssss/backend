@@ -36,31 +36,49 @@ class ReportController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'task_id' => 'required|exists:tasks,id',
+            'task_id' => 'nullable|exists:tasks,id',
+            'duty_id' => 'nullable|exists:duties,id',
             'description' => 'required|string|min:3',
             'attachments.*' => 'nullable|file|max:5120',
         ]);
 
-        $task = Task::findOrFail($request->task_id);
-        $task->update(['status' => 'completed']);
-        $latestPrevious = Report::where('task_id', $task->id)
+        // Ensure either task_id or duty_id is provided
+        if (!$request->task_id && !$request->duty_id) {
+            return response()->json([
+                'message' => 'Either task_id or duty_id is required'
+            ], 422);
+        }
+
+        // If duty_id provided, auto-create a task
+        if ($request->duty_id && !$request->task_id) {
+            $duty = \App\Models\Duty::findOrFail($request->duty_id);
+            $task = Task::create([
+                'duty_id' => $request->duty_id,
+                'assigned_to' => Auth::id(),
+                'title' => 'Report: ' . $duty->name,
+                'instructions' => 'Auto-generated task for duty report submission',
+                'scheduled_date' => now()->toDateString(),
+                'scheduled_time' => now()->toTimeString(),
+                'status' => 'completed',
+            ]);
+            $taskId = $task->id;
+        } else {
+            $taskId = $request->task_id;
+            $task = Task::findOrFail($taskId);
+            $task->update(['status' => 'completed']);
+        }
+
+        $latestPrevious = Report::where('task_id', $taskId)
             ->latest()
             ->first();
 
         $report = Report::create([
-            'task_id' => $task->id,
+            'task_id' => $taskId,
             'parent_report_id' => $latestPrevious?->id,
             'teacher_id' => Auth::id(),
             'description' => $request->description,
             'status' => 'submitted',
         ]);
-
-        // $report = Report::create([
-        //     'task_id' => $task->id,
-        //     'teacher_id' => Auth::id(),
-        //     'description' => $request->description,
-        //     'status' => 'submitted',
-        // ]);
 
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {

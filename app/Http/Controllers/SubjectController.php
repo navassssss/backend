@@ -103,4 +103,102 @@ class SubjectController extends Controller
             'isLocked' => $subject->is_locked
         ]);
     }
+
+    public function getSubjectStatistics($id)
+    {
+        $subject = Subject::with(['classRoom', 'teacher'])->findOrFail($id);
+        
+        // Get all CCE works for this subject
+        $works = \App\Models\CCEWork::where('subject_id', $id)
+            ->with(['submissions' => function($query) {
+                $query->whereNotNull('marks_obtained');
+            }])
+            ->orderBy('deadline', 'desc')
+            ->get();
+
+        $totalWorks = $works->count();
+        $completedWorks = 0;
+        
+        $worksData = $works->map(function($work) use (&$completedWorks, $subject) {
+            $now = now();
+            $deadlinePassed = $work->deadline ? $now->gt($work->deadline) : false;
+            $evaluatedCount = $work->submissions->count();
+            
+            // Work is completed if deadline passed AND some students are evaluated
+            $isCompleted = $deadlinePassed && $evaluatedCount > 0;
+            if ($isCompleted) {
+                $completedWorks++;
+            }
+            
+            // Get total students from the subject's class
+            $totalStudents = \App\Models\Student::where('class_id', $subject->class_id)->count();
+            
+            return [
+                'id' => $work->id,
+                'title' => $work->title,
+                'description' => $work->description,
+                'max_marks' => $work->max_marks,
+                'deadline' => $work->deadline ? $work->deadline->toISOString() : null,
+                'is_completed' => $isCompleted,
+                'evaluated_count' => $evaluatedCount,
+                'total_students' => $totalStudents
+            ];
+        });
+
+        // Calculate student marks aggregation
+        $students = \App\Models\Student::where('class_id', $subject->class_id)
+            ->with(['user'])
+            ->get();
+
+        // Calculate total possible marks from ALL works in this subject
+        $totalPossibleMarks = $works->sum('max_marks');
+        
+        $studentMarks = $students->map(function($student) use ($id, $subject, $totalPossibleMarks) {
+            // Get all evaluated submissions for this student in this subject
+            $submissions = \App\Models\CCESubmission::whereHas('work', function($query) use ($id) {
+                $query->where('subject_id', $id);
+            })
+            ->where('student_id', $student->id)
+            ->whereNotNull('marks_obtained')
+            ->with('work')
+            ->get();
+
+            $totalObtained = $submissions->sum('marks_obtained');
+
+            // Calculate aggregated marks: (obtained/total_possible_all_works) × subject_max_marks
+            $aggregatedMarks = $totalPossibleMarks > 0 
+                ? ($totalObtained / $totalPossibleMarks) * $subject->final_max_marks 
+                : 0;
+            
+            $percentage = $totalPossibleMarks > 0 
+                ? ($totalObtained / $totalPossibleMarks) * 100 
+                : 0;
+
+            return [
+                'student_id' => $student->id,
+                'student_name' => $student->user->name,
+                'username' => $student->username,
+                'total_obtained' => round($totalObtained, 2),
+                'total_possible' => $totalPossibleMarks,
+                'aggregated_marks' => round($aggregatedMarks, 2),
+                'percentage' => round($percentage, 2)
+            ];
+        })->sortByDesc('aggregated_marks')->values();
+
+        return response()->json([
+            'subject' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+                'code' => $subject->code,
+                'max_marks' => $subject->final_max_marks,
+                'class_id' => $subject->class_id,
+                'class_name' => $subject->classRoom->name,
+                'teacher_name' => $subject->teacher->name
+            ],
+            'total_works' => $totalWorks,
+            'completed_works' => $completedWorks,
+            'works' => $worksData,
+            'student_marks' => $studentMarks
+        ]);
+    }
 }

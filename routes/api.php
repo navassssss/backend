@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AchievementController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ClassRoomController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DutyController;
 use App\Http\Controllers\FeeManagementController;
@@ -32,6 +33,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/teachers/{id}', [TeacherController::class, 'show']);
     Route::post('/teachers/{teacher}/deactivate', [TeacherController::class, 'deactivate']);
     Route::post('/teachers/{teacher}/toggle-review-permission', [TeacherController::class, 'toggleReviewPermission']);
+
+    Route::get('/students', [StudentController::class, 'index']);
+    Route::get('/students/{id}', [StudentController::class, 'showById']);
+    Route::get('/students/{id}/attendance', [StudentController::class, 'getAttendance']);
+
+    // Class management routes
+    Route::get('/classes', [ClassRoomController::class, 'index']);
+    Route::post('/classes/{id}/assign-teacher', [ClassRoomController::class, 'assignTeacher']);
+    Route::get('/classes/{id}/report', [ClassRoomController::class, 'getReport']);
+
+
 
 
     Route::get('/duties', [DutyController::class, 'index']);
@@ -96,8 +108,10 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/attendance', [App\Http\Controllers\AttendanceController::class, 'index']);
     Route::post('/attendance', [App\Http\Controllers\AttendanceController::class, 'store']);
     Route::post('/attendance/check', [App\Http\Controllers\AttendanceController::class, 'check']);
+    // Specific routes must come before dynamic routes
+    Route::get('/attendance/classes', [App\Http\Controllers\AttendanceController::class, 'classes']);
     Route::get('/attendance/{id}', [App\Http\Controllers\AttendanceController::class, 'show']);
-    Route::get('/classes', [App\Http\Controllers\AttendanceController::class, 'classes']);
+    // Route::get('/classes', [App\Http\Controllers\AttendanceController::class, 'classes']); // Commented out - conflicts with ClassRoomController
     Route::get('/classes/{classId}/students', [App\Http\Controllers\AttendanceController::class, 'students']);
 
     /**
@@ -107,6 +121,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/subjects', [App\Http\Controllers\SubjectController::class, 'index']);
     Route::post('/subjects', [App\Http\Controllers\SubjectController::class, 'store']);
     Route::get('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'show']);
+    Route::get('/subjects/{id}/statistics', [App\Http\Controllers\SubjectController::class, 'getSubjectStatistics']);
     Route::put('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'update']);
     Route::post('/subjects/{id}/toggle-lock', [App\Http\Controllers\SubjectController::class, 'toggleLock']);
 
@@ -122,12 +137,16 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     
     // CCE Student Marks (Principal)
     Route::get('/cce/student-marks', [App\Http\Controllers\CCESubmissionController::class, 'studentMarks']);
+    
+    // CCE Class Report (Principal)
+    Route::get('/cce/class-report', [App\Http\Controllers\CCEWorkController::class, 'getClassReport']);
 
     /**
      * FEE MANAGEMENT ROUTES
      */
     // Students & Overview
     Route::get('/fees/students', [FeeManagementController::class, 'getStudents']);
+    Route::get('/fees/status-counts', [FeeManagementController::class, 'getStatusCounts']);
     Route::get('/fees/students/{studentId}', [FeeManagementController::class, 'getStudentOverview']);
     Route::get('/fees/students/{studentId}/payments', [FeeManagementController::class, 'getPaymentHistory']);
     
