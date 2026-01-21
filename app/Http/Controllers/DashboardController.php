@@ -66,14 +66,15 @@ class DashboardController extends Controller
         // Fetch tasks created by principal or generally upcoming? 
         // Showing recent uncompleted tasks for oversight
         $upcomingTasks = Task::where('status', 'pending')
-            ->orderBy('due_date')
+            ->orderBy('scheduled_date')
+            ->orderBy('scheduled_time')
             ->take(3)
             ->get()
             ->map(function ($task) {
                 return [
                     'id' => $task->id,
                     'title' => $task->title,
-                    'time' => $task->due_date ? date('h:i A', strtotime($task->due_date)) : 'No time',
+                    'time' => $task->scheduled_time ? date('h:i A', strtotime($task->scheduled_time)) : 'No time',
                     'status' => $task->status
                 ];
             });
@@ -107,16 +108,16 @@ class DashboardController extends Controller
             ]
         ];
 
-        $upcomingTasks = Task::where('assigned_to', $user->id)
-            ->where('status', '!=', 'completed')
-            ->orderBy('due_date')
+        $upcomingTasks = Task::where('status', 'pending')
+            ->orderBy('scheduled_date')
+            ->orderBy('scheduled_time')
             ->take(3)
             ->get()
             ->map(function ($task) {
                 return [
                     'id' => $task->id,
                     'title' => $task->title,
-                    'time' => $task->due_date ? date('h:i A', strtotime($task->due_date)) : 'No time',
+                    'time' => $task->scheduled_time ? date('h:i A', strtotime($task->scheduled_time)) : 'No time',
                     'status' => $task->status
                 ];
             });
