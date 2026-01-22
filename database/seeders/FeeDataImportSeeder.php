@@ -88,7 +88,7 @@ class FeeDataImportSeeder extends Seeder
                 
                 // Sanity check: don't create more than 24 months
                 $monthsDiff = $startDate->diffInMonths($endDate);
-                if ($monthsDiff > 24) {
+                if ($monthsDiff > 60) {
                     $errors[] = "Date range too large for {$username}: {$monthsDiff} months";
                     DB::commit();
                     continue;
