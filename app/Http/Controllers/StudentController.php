@@ -15,11 +15,14 @@ class StudentController extends Controller
         $query = Student::with(['classRoom', 'user']);
 
         // Search by name or roll number
+        // Search by name (in users table) or roll number
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('roll_number', 'like', "%{$search}%");
+                $q->whereHas('user', function ($uq) use ($search) {
+                    $uq->where('name', 'like', "%{$search}%");
+                })
+                ->orWhere('roll_number', 'like', "%{$search}%");
             });
         }
 
@@ -28,8 +31,8 @@ class StudentController extends Controller
             $classValue = $request->class;
             $query->whereHas('classRoom', function ($q) use ($classValue) {
                 $q->where('level', $classValue)
-                  ->orWhere('name', 'like', "%Class {$classValue}%")
-                  ->orWhere('name', 'like', "%{$classValue}%");
+                   ->orWhere('name', 'like', "%Class {$classValue}%")
+                   ->orWhere('name', 'like', "%{$classValue}%");
             });
         }
 
@@ -45,7 +48,10 @@ class StudentController extends Controller
         if ($sortBy === 'roll_number') {
             $query->orderBy('roll_number');
         } else {
-            $query->orderBy('name');
+            // Sort by user name
+            $query->join('users', 'students.user_id', '=', 'users.id')
+                  ->orderBy('users.name')
+                  ->select('students.*'); // Avoid ambiguous column errors
         }
 
         // Paginate results
