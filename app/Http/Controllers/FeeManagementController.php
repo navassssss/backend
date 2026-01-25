@@ -384,7 +384,7 @@ class FeeManagementController extends Controller
             'end_year' => 'required|integer',
             'end_month' => 'required|integer|min:1|max:12',
             'amount' => 'required|numeric|min:0',
-            'reason' => 'required|string',
+            'reason' => 'nullable|string',
         ]);
 
         $count = $this->feeService->setStudentFeeRange(
@@ -394,7 +394,7 @@ class FeeManagementController extends Controller
             $validated['end_year'],
             $validated['end_month'],
             $validated['amount'],
-            $validated['reason']
+            $validated['reason'] ?? 'Fee adjustment'
         );
 
         return response()->json([
