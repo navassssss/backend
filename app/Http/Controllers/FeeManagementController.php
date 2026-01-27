@@ -51,14 +51,16 @@ class FeeManagementController extends Controller
         $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) {
             $status = $this->feeService->getStudentMonthlyStatus($student->id);
             
-            // Filter to only include months up to current month for expected amount
-            $currentYear = now()->year;
-            $currentMonth = now()->month;
-            $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                if ($month['year'] < $currentYear) {
+            // Filter to only include months up to NEXT month for expected amount
+            $limitDate = now()->addMonth(); // Show next month also
+            $limitYear = $limitDate->year;
+            $limitMonth = $limitDate->month;
+
+            $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+                if ($month['year'] < $limitYear) {
                     return true;
-                } elseif ($month['year'] == $currentYear) {
-                    return $month['month'] <= $currentMonth;
+                } elseif ($month['year'] == $limitYear) {
+                    return $month['month'] <= $limitMonth;
                 }
                 return false;
             });
@@ -67,9 +69,9 @@ class FeeManagementController extends Controller
             $totalExpected = $statusUpToCurrent->sum('payable');
             
             // Get ALL payments including future months
-            $allStatus = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                // Include past/current months
-                if ($month['year'] < $currentYear || ($month['year'] == $currentYear && $month['month'] <= $currentMonth)) {
+            $allStatus = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+                // Include past/next months
+                if ($month['year'] < $limitYear || ($month['year'] == $limitYear && $month['month'] <= $limitMonth)) {
                     return true;
                 }
                 // Include future months only if they have payments
@@ -161,21 +163,23 @@ class FeeManagementController extends Controller
             foreach ($allStudentsForCount as $student) {
                 $status = $this->feeService->getStudentMonthlyStatus($student->id);
                 
-                $currentYear = now()->year;
-                $currentMonth = now()->month;
-                $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                    if ($month['year'] < $currentYear) {
+                $limitDate = now()->addMonth(); 
+                $limitYear = $limitDate->year;
+                $limitMonth = $limitDate->month;
+
+                $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+                    if ($month['year'] < $limitYear) {
                         return true;
-                    } elseif ($month['year'] == $currentYear) {
-                        return $month['month'] <= $currentMonth;
+                    } elseif ($month['year'] == $limitYear) {
+                        return $month['month'] <= $limitMonth;
                     }
                     return false;
                 });
                 
                 $totalExpected = $statusUpToCurrent->sum('payable');
                 
-                $allStatus = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                    if ($month['year'] < $currentYear || ($month['year'] == $currentYear && $month['month'] <= $currentMonth)) {
+                $allStatus = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+                    if ($month['year'] < $limitYear || ($month['year'] == $limitYear && $month['month'] <= $limitMonth)) {
                         return true;
                     }
                     if ($month['paid'] > 0) {
@@ -214,16 +218,18 @@ class FeeManagementController extends Controller
         $status = $this->feeService->getStudentMonthlyStatus($studentId);
         
         // Filter to include:
-        // 1. All months up to current month
-        // 2. Future months that have payments (paid or partially paid)
-        $currentYear = now()->year;
-        $currentMonth = now()->month;
-        $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-            // Include if past or current month
-            if ($month['year'] < $currentYear) {
+        // 1. All months up to NEXT month
+        // 2. Future months (after next month) that have payments
+        $limitDate = now()->addMonth();
+        $limitYear = $limitDate->year;
+        $limitMonth = $limitDate->month;
+
+        $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+            // Include if past or next month
+            if ($month['year'] < $limitYear) {
                 return true;
             }
-            if ($month['year'] == $currentYear && $month['month'] <= $currentMonth) {
+            if ($month['year'] == $limitYear && $month['month'] <= $limitMonth) {
                 return true;
             }
             
@@ -235,13 +241,13 @@ class FeeManagementController extends Controller
             return false;
         })->values()->all();
         
-        // Calculate totals ONLY for past and current months
+        // Calculate totals ONLY for past and next months
         // We filter the already filtered list again to exclude future months from the sum
-        $pastAndCurrentMonths = collect($statusUpToCurrent)->filter(function ($month) use ($currentYear, $currentMonth) {
-            if ($month['year'] < $currentYear) {
+        $pastAndCurrentMonths = collect($statusUpToCurrent)->filter(function ($month) use ($limitYear, $limitMonth) {
+            if ($month['year'] < $limitYear) {
                 return true;
             }
-            if ($month['year'] == $currentYear && $month['month'] <= $currentMonth) {
+            if ($month['year'] == $limitYear && $month['month'] <= $limitMonth) {
                 return true;
             }
             return false;
@@ -257,6 +263,7 @@ class FeeManagementController extends Controller
                 'name' => $student->user->name,
                 'username' => $student->username,
                 'class_name' => $student->class->name,
+                'monthly_fee' => (float) $student->monthly_fee,
             ],
             'monthly_status' => array_reverse($statusUpToCurrent), // Reverse to show latest months first
             'total_expected' => $totalExpected,
@@ -404,6 +411,25 @@ class FeeManagementController extends Controller
     }
 
     /**
+     * Update student fixed monthly fee
+     */
+    public function updateStudentMonthlyFee(Request $request, $studentId)
+    {
+        $validated = $request->validate([
+            'monthly_fee' => 'required|numeric|min:0',
+        ]);
+
+        $student = Student::findOrFail($studentId);
+        $student->monthly_fee = $validated['monthly_fee'];
+        $student->save();
+
+        return response()->json([
+            'message' => 'Student monthly fee updated successfully',
+            'monthly_fee' => $student->monthly_fee,
+        ]);
+    }
+
+    /**
      * Get overall financial summary
      */
     public function getSummary()
@@ -425,14 +451,16 @@ class FeeManagementController extends Controller
         $report = $students->map(function ($student) {
             $status = $this->feeService->getStudentMonthlyStatus($student->id);
             
-            // Filter to only include months up to current month
-            $currentYear = now()->year;
-            $currentMonth = now()->month;
-            $statusUpToCurrent = collect($status)->filter(function ($month) use ($currentYear, $currentMonth) {
-                if ($month['year'] < $currentYear) {
+            // Filter to only include months up to NEXT month
+            $limitDate = now()->addMonth();
+            $limitYear = $limitDate->year;
+            $limitMonth = $limitDate->month;
+
+            $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
+                if ($month['year'] < $limitYear) {
                     return true; // Include all months from previous years
-                } elseif ($month['year'] == $currentYear) {
-                    return $month['month'] <= $currentMonth; // Include only up to current month
+                } elseif ($month['year'] == $limitYear) {
+                    return $month['month'] <= $limitMonth; // Include only up to next month
                 }
                 return false; // Exclude future months
             });
