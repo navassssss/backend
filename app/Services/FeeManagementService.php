@@ -132,6 +132,9 @@ class FeeManagementService
         int $paymentId,
         float $remaining
     ): array {
+        $student = Student::find($studentId);
+        $defaultMonthlyFee = $student ? (float)$student->monthly_fee : 0.0;
+
         // Get latest fee plan
         $latestPlan = MonthlyFeePlan::where('student_id', $studentId)
             ->orderBy('year', 'desc')
@@ -141,19 +144,24 @@ class FeeManagementService
         // If no fee plan exists, create a default one for current month
         if (!$latestPlan) {
             $currentDate = now();
+            // Determine initial fee: Use default if set, otherwise use payment amount
+            $initialFee = ($defaultMonthlyFee > 0) ? $defaultMonthlyFee : $remaining;
+
             $latestPlan = MonthlyFeePlan::create([
                 'student_id' => $studentId,
                 'year' => $currentDate->year,
                 'month' => $currentDate->month,
-                'payable_amount' => $remaining, // Use payment amount as fee
+                'payable_amount' => $initialFee,
                 'reason' => 'Auto-created during payment (no existing plan)',
             ]);
         }
         
-        $latestAmount = $latestPlan->payable_amount;
+        // Determine the standard amount for future months
+        // If student has a fixed monthly fee, use it. Otherwise propagate the last month's fee.
+        $standardAmount = ($defaultMonthlyFee > 0) ? $defaultMonthlyFee : $latestPlan->payable_amount;
         
-        // SAFETY: If student has ₹0 monthly fee, allocate entire remaining to current month
-        if ($latestAmount <= 0) {
+        // SAFETY: If student has ₹0 monthly fee and no history, allocate entire remaining to current month
+        if ($standardAmount <= 0) {
             $currentDate = now();
             $currentYear = $currentDate->year;
             $currentMonth = $currentDate->month;
@@ -207,6 +215,7 @@ class FeeManagementService
             }
             
             // Create/update fee plan for this month (using updateOrCreate to avoid duplicates)
+            // Use standardAmount (which honors monthly_fee)
             MonthlyFeePlan::updateOrCreate(
                 [
                     'student_id' => $studentId,
@@ -214,13 +223,14 @@ class FeeManagementService
                     'month' => $currentMonth,
                 ],
                 [
-                    'payable_amount' => $latestAmount,
+                    'payable_amount' => $standardAmount,
                     'reason' => 'Auto-created during payment',
                 ]
             );
             
             // Allocate payment
-            $allocateAmount = min($remaining, $latestAmount);
+            // We compare against standardAmount (the fee for this month)
+            $allocateAmount = min($remaining, $standardAmount);
             
             FeePaymentAllocation::create([
                 'fee_payment_id' => $paymentId,
@@ -234,7 +244,7 @@ class FeeManagementService
                 'month' => $currentMonth,
                 'year' => $currentYear,
                 'allocated' => $allocateAmount,
-                'cleared' => ($allocateAmount >= $latestAmount),
+                'cleared' => ($allocateAmount >= $standardAmount),
                 'auto_created' => true,
             ];
             

@@ -17,6 +17,7 @@ class Student extends Model
         'total_points',
         'wallet_balance',
         'opening_balance',
+        'monthly_fee',
         'last_processed_row',
     ];
 
@@ -24,6 +25,7 @@ class Student extends Model
         'joined_at' => 'date',
         'wallet_balance' => 'decimal:2',
         'opening_balance' => 'decimal:2',
+        'monthly_fee' => 'decimal:2',
     ];
 
     protected $appends = ['stars', 'monthly_points', 'name'];
