@@ -21,7 +21,7 @@ class LegacyFeeImportSeeder extends Seeder
 
     public function run()
     {
-        $filePath = public_path('monthly.csv');
+        $filePath = storage_path('app/public/monthly.csv');
         if (!file_exists($filePath)) {
             $this->command->error("CSV file not found at: {$filePath}");
             return;
