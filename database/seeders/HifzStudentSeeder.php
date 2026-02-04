@@ -89,7 +89,7 @@ EOT;
             );
 
             // Ensure unique email
-            $email = strtolower(preg_replace('/[^a-z0-9]/', '', $adno)) . '@hasanath.com';
+            $email = preg_replace('/[^a-z0-9]/', '', strtolower($adno)) . '@hasanath.com';
 
             // Create/Find User
             $user = User::firstOrCreate(
