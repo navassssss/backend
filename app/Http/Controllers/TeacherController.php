@@ -18,7 +18,9 @@ class TeacherController extends Controller
                 ->get();
         }
         return User::whereIn('role', ['teacher', 'principal'])
-            ->withCount(['duties', 'tasks'])->get();
+            ->withCount(['duties', 'tasks'])
+            ->with('permissions')
+            ->get();
 
     }
 
@@ -42,17 +44,61 @@ class TeacherController extends Controller
         return response()->json($teacher);
     }
 
+    public function update(Request $request, $id)
+    {
+        $teacher = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'name' => 'required',
+            'email' => 'required|email|unique:users,email,' . $id,
+            'phone' => 'nullable',
+            'department' => 'nullable|string',
+        ]);
+
+        $teacher->update($validated);
+
+        return response()->json($teacher);
+    }
+
     public function show($id)
     {
         $teacher = User::where('id', $id)
             ->whereIn('role', ['teacher', 'principal'])
             ->with([
                 'duties',
+                'permissions',
                 'tasks' => function ($q) {
                     $q->where('status', 'pending');
                 },
             ])
             ->firstOrFail();
+
+        $classes = \App\Models\ClassRoom::where('class_teacher_id', $id)->get();
+        $reports = \App\Models\Report::where('teacher_id', $id)->with('duty', 'task')->latest()->take(10)->get();
+        // Subjects & CCE Works
+        $subjects = \App\Models\Subject::where('teacher_id', $id)
+            ->with('classRoom')
+            ->withCount('works as total_works_assigned')
+            ->with(['works' => function ($q) {
+                $q->withCount([
+                    'submissions as total_submissions',
+                    'submissions as evaluated_submissions' => function ($sq) {
+                        $sq->whereNotNull('evaluated_at')->orWhere('status', 'evaluated');
+                    }
+                ]);
+            }])
+            ->get()
+            ->map(function ($subject) {
+                $totalSubmissions = $subject->works->sum('total_submissions');
+                $evaluatedSubmissions = $subject->works->sum('evaluated_submissions');
+                $subject->completion_percent = $totalSubmissions > 0 ? (int)round(($evaluatedSubmissions / $totalSubmissions) * 100) : 0;
+                unset($subject->works); // Keep payload small
+                return $subject;
+            });
+
+        $teacher->assigned_classes = $classes;
+        $teacher->recent_reports = $reports;
+        $teacher->subjects = $subjects;
 
         return response()->json($teacher);
     }
@@ -103,6 +149,52 @@ class TeacherController extends Controller
         return response()->json([
             'message' => 'Permission updated',
             'can_review_achievements' => $teacher->can_review_achievements
+        ]);
+    }
+
+    public function toggleVicePrincipal(User $teacher)
+    {
+        $actor = auth()->user();
+
+        // Only a real principal (by role) can grant/revoke vice-principal status
+        if (!in_array($actor->role, ['principal', 'manager'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Only applicable to teachers, not other principals/managers
+        if ($teacher->role !== 'teacher') {
+            return response()->json(['message' => 'Only teachers can be made vice-principal'], 422);
+        }
+
+        $teacher->update([
+            'is_vice_principal' => !$teacher->is_vice_principal
+        ]);
+
+        return response()->json([
+            'message' => $teacher->is_vice_principal
+                ? "{$teacher->name} is now a Vice-Principal"
+                : "{$teacher->name}'s Vice-Principal access has been revoked",
+            'is_vice_principal' => $teacher->is_vice_principal
+        ]);
+    }
+
+    public function syncPermissions(Request $request, User $teacher)
+    {
+        if (auth()->user()->role !== 'principal' && auth()->user()->role !== 'manager') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'permissions' => 'array',
+            'permissions.*' => 'exists:permissions,name'
+        ]);
+
+        $permissionIds = \App\Models\Permission::whereIn('name', $validated['permissions'])->pluck('id');
+        $teacher->permissions()->sync($permissionIds);
+
+        return response()->json([
+            'message' => 'Permissions updated successfully',
+            'permissions' => $teacher->permissions()->get()
         ]);
     }
 }

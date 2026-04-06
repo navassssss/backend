@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Duty;
+use App\Services\WebPushService;
 use Illuminate\Http\Request;
 
 class DutyController extends Controller
 {
+    public function __construct(private readonly WebPushService $push) {}
+
     public function index()
     {
         // Principal can see all; later you can filter by role
@@ -48,6 +51,14 @@ class DutyController extends Controller
                 $teacher = \App\Models\User::find($tid);
                 if ($teacher) {
                     $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
+
+                    // Real Browser Push Notification
+                    $this->push->sendToUser($tid, [
+                        'title' => 'New Duty Assigned',
+                        'body'  => $request->user()->name . " assigned you a duty: " . $duty->name,
+                        'url'   => "/duties/" . $duty->id,
+                        'tag'   => "duty-assigned-" . $duty->id
+                    ]);
                 }
             }
         }
@@ -107,6 +118,14 @@ class DutyController extends Controller
             $teacher = \App\Models\User::find($tid);
             if ($teacher) {
                 $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
+
+                // Real Browser Push Notification
+                $this->push->sendToUser($tid, [
+                    'title' => 'New Duty Assigned',
+                    'body'  => $request->user()->name . " added you to the duty group: " . $duty->name,
+                    'url'   => "/duties/" . $duty->id,
+                    'tag'   => "duty-assigned-" . $duty->id
+                ]);
             }
         }
 

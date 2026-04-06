@@ -31,8 +31,19 @@ class StudentController extends Controller
             $classValue = $request->class;
             $query->whereHas('classRoom', function ($q) use ($classValue) {
                 $q->where('level', $classValue)
-                   ->orWhere('name', 'like', "%Class {$classValue}%")
-                   ->orWhere('name', 'like', "%{$classValue}%");
+                  ->orWhere(function ($subQ) use ($classValue) {
+                      $subQ->where(function ($nameQ) use ($classValue) {
+                          $nameQ->where('name', $classValue)
+                                ->orWhere('name', "Class {$classValue}")
+                                ->orWhere('name', 'like', "{$classValue}%")
+                                ->orWhere('name', 'like', "Class {$classValue}%");
+                      })->where(function ($notQ) use ($classValue) {
+                          foreach (range(0, 9) as $digit) {
+                              $notQ->where('name', 'not like', "{$classValue}{$digit}%")
+                                   ->where('name', 'not like', "Class {$classValue}{$digit}%");
+                          }
+                      });
+                  });
             });
         }
 
@@ -237,5 +248,118 @@ class StudentController extends Controller
         $student->update($validated);
 
         return response()->json($student);
+    }
+
+    /**
+     * Bulk create students from array
+     */
+    public function bulkCreate(Request $request)
+    {
+        $validated = $request->validate([
+            'students' => 'required|array',
+            'students.*.id' => 'nullable|integer|exists:students,id',
+            'students.*.name' => 'required|string',
+            'students.*.roll_number' => 'nullable|string',
+            'students.*.class_id' => 'nullable|exists:class_rooms,id',
+        ]);
+
+        $createdStudents = [];
+
+        foreach ($validated['students'] as $studentData) {
+            
+            // 1) UPDATE EXISTING STUDENT
+            if (!empty($studentData['id'])) {
+                $existingStudent = \App\Models\Student::find($studentData['id']);
+                
+                // Ensure new roll number is not taken by someone else
+                if (!empty($studentData['roll_number']) && $existingStudent->roll_number !== $studentData['roll_number']) {
+                    $conflict = \App\Models\Student::where('roll_number', $studentData['roll_number'])
+                        ->where('id', '!=', $studentData['id'])
+                        ->first();
+                    if ($conflict) {
+                        return response()->json(['message' => "Admission number {$studentData['roll_number']} is already assigned to another student."], 422);
+                    }
+                }
+
+                $existingStudent->update([
+                    'class_id' => $studentData['class_id'] ?? $existingStudent->class_id,
+                    'roll_number' => $studentData['roll_number'] ?? $existingStudent->roll_number,
+                    'username' => !empty($studentData['roll_number']) ? 'st_' . $studentData['roll_number'] : $existingStudent->username,
+                ]);
+
+                if ($existingStudent->user) {
+                    $existingStudent->user->update(['name' => $studentData['name']]);
+                }
+                
+                $createdStudents[] = $existingStudent;
+                continue;
+            }
+
+            // 2) CREATE NEW STUDENT
+            // Check if roll_number is taken globally
+            if (!empty($studentData['roll_number'])) {
+                $conflict = \App\Models\Student::where('roll_number', $studentData['roll_number'])->first();
+                if ($conflict) {
+                    return response()->json(['message' => "Admission number {$studentData['roll_number']} is already taken. Please verify your list."], 422);
+                }
+            }
+
+            // Create User safely
+            $user = \App\Models\User::create([
+                'name' => $studentData['name'],
+                'email' => 'temp' . uniqid() . '@student.com', // temporary
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'role' => 'student'
+            ]);
+            
+            // Re-generate deterministic unique email
+            $cleanName = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $studentData['name']));
+            $user->update(['email' => $cleanName . $user->id . '@student.com']);
+
+            $rollObj = $studentData['roll_number'] ?? ('TEMP' . $user->id);
+
+            // Create Student
+            $student = \App\Models\Student::create([
+                'user_id' => $user->id,
+                'class_id' => $studentData['class_id'] ?? null,
+                'username' => 'st_' . $rollObj,
+                'roll_number' => $studentData['roll_number'] ?? null,
+                'total_points' => 0,
+                'wallet_balance' => 0,
+                'opening_balance' => 0,
+                'monthly_fee' => 0,
+            ]);
+
+            $student->load('user', 'classRoom');
+            $createdStudents[] = $student;
+        }
+
+        return response()->json([
+            'message' => 'Successfully processed ' . count($createdStudents) . ' students',
+            'data' => collect($createdStudents)->take(10)
+        ], 201);
+    }
+
+    /**
+     * Bulk delete students
+     */
+    public function bulkDelete(Request $request)
+    {
+        $validated = $request->validate([
+            'student_ids' => 'required|array',
+            'student_ids.*' => 'integer|exists:students,id',
+        ]);
+
+        $students = \App\Models\Student::whereIn('id', $validated['student_ids'])->get();
+
+        foreach ($students as $student) {
+            // Delete user if it exists
+            if ($student->user) {
+                $student->user->delete();
+            }
+            $student->delete();
+        }
+
+        return response()->json(['message' => 'Students deleted successfully']);
     }
 }

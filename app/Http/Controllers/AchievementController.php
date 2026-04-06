@@ -101,7 +101,7 @@ class AchievementController extends Controller
     public function approve(Request $request, Achievement $achievement)
     {
         $user = $request->user();
-        if ($user->role !== 'principal' && !$user->can_review_achievements) {
+        if (!$user->hasPermission('review_achievements')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -128,7 +128,7 @@ class AchievementController extends Controller
     public function reject(Request $request, Achievement $achievement)
     {
         $user = $request->user();
-        if ($user->role !== 'principal' && !$user->can_review_achievements) {
+        if (!$user->hasPermission('review_achievements')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

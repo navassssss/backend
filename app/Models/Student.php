@@ -69,7 +69,28 @@ class Student extends Model
     protected function stars(): Attribute
     {
         return Attribute::make(
-            get: fn () => (int) floor($this->total_points / 20)
+            get: function () {
+                $thresholdsJson = \Illuminate\Support\Facades\Cache::remember('star_thresholds', 3600, function () {
+                    return \App\Models\Setting::getValue('star_thresholds');
+                });
+                
+                if ($thresholdsJson) {
+                    $thresholds = json_decode($thresholdsJson, true);
+                    if (is_array($thresholds)) {
+                        // thresholds: {"1": 20, "2": 50, "3": 100}
+                        // Sort by points descending so we check highest first
+                        arsort($thresholds);
+                        foreach ($thresholds as $stars => $points) {
+                            if ($this->total_points >= $points) {
+                                return (int) $stars;
+                            }
+                        }
+                        return 0;
+                    }
+                }
+
+                return (int) floor($this->total_points / 20);
+            }
         );
     }
 
