@@ -10,7 +10,16 @@ class SubjectController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Subject::with(['classRoom', 'teacher']);
+        $query = Subject::with(['classRoom', 'teacher'])
+            ->withCount('works as total_works_assigned')
+            ->with(['works' => function ($q) {
+                $q->withCount([
+                    'submissions as total_submissions',
+                    'submissions as evaluated_submissions' => function ($sq) {
+                        $sq->whereNotNull('evaluated_at')->orWhere('status', 'evaluated');
+                    }
+                ]);
+            }]);
 
         // Role-based filtering
         if ($user->role === 'teacher') {
@@ -21,6 +30,10 @@ class SubjectController extends Controller
 
         $subjects = $query->get()
             ->map(function($subject) {
+                $totalSubmissions = $subject->works->sum('total_submissions');
+                $evaluatedSubmissions = $subject->works->sum('evaluated_submissions');
+                $completionPercent = $totalSubmissions > 0 ? (int)round(($evaluatedSubmissions / $totalSubmissions) * 100) : 0;
+                
                 return [
                     'id' => $subject->id,
                     'name' => $subject->name,
@@ -30,7 +43,8 @@ class SubjectController extends Controller
                     'teacherName' => $subject->teacher->name,
                     'teacherId' => $subject->teacher_id,
                     'finalMaxMarks' => $subject->final_max_marks,
-                    'isLocked' => $subject->is_locked
+                    'isLocked' => $subject->is_locked,
+                    'completion_percent' => $completionPercent
                 ];
             });
 

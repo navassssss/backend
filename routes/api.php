@@ -9,6 +9,7 @@ use App\Http\Controllers\FeeManagementController;
 use App\Http\Controllers\IssueCategoryController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\LeaderboardController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StudentAuthController;
 use App\Http\Controllers\StudentController;
@@ -17,6 +18,9 @@ use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+// Public: VAPID key (frontend needs this before auth)
+Route::get('/push/vapid-key', [PushSubscriptionController::class, 'vapidKey']);
+
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
@@ -24,6 +28,8 @@ Route::get('/user', function (Request $request) {
 Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
+    Route::put('/profile', [AuthController::class, 'updateProfile']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
@@ -31,10 +37,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/teachers', [TeacherController::class, 'index']);
     Route::post('/teachers', [TeacherController::class, 'store']);
     Route::get('/teachers/{id}', [TeacherController::class, 'show']);
+    Route::put('/teachers/{id}', [TeacherController::class, 'update']);
     Route::post('/teachers/{teacher}/deactivate', [TeacherController::class, 'deactivate']);
     Route::post('/teachers/{teacher}/toggle-review-permission', [TeacherController::class, 'toggleReviewPermission']);
+    Route::post('/teachers/{teacher}/toggle-vice-principal', [TeacherController::class, 'toggleVicePrincipal']);
+    Route::post('/teachers/{teacher}/sync-permissions', [TeacherController::class, 'syncPermissions']);
+
+    Route::get('/permissions', [\App\Http\Controllers\PermissionController::class, 'index']);
 
     Route::get('/students', [StudentController::class, 'index']);
+    Route::post('/students/bulk', [StudentController::class, 'bulkCreate']);
+    Route::post('/students/bulk-delete', [StudentController::class, 'bulkDelete']);
     Route::get('/students/{id}', [StudentController::class, 'showById']);
     Route::get('/students/{id}/attendance', [StudentController::class, 'getAttendance']);
 
@@ -102,6 +115,17 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
 
+    // Announcements (staff management)
+    Route::get('/announcements', [App\Http\Controllers\AnnouncementController::class, 'index']);
+    Route::post('/announcements', [App\Http\Controllers\AnnouncementController::class, 'store']);
+    Route::get('/announcements/{announcement}', [App\Http\Controllers\AnnouncementController::class, 'show']);
+    Route::put('/announcements/{announcement}', [App\Http\Controllers\AnnouncementController::class, 'update']);
+    Route::delete('/announcements/{announcement}', [App\Http\Controllers\AnnouncementController::class, 'destroy']);
+    Route::post('/announcements/{announcement}/toggle-pin', [App\Http\Controllers\AnnouncementController::class, 'togglePin']);
+    // Teacher announcement feed (announcements targeted at the logged-in teacher)
+    Route::get('/announcements/feed/teacher', [App\Http\Controllers\AnnouncementController::class, 'teacherFeed']);
+    Route::post('/announcements/{announcement}/read', [App\Http\Controllers\AnnouncementController::class, 'teacherMarkRead']);
+
     /**
      * ATTENDANCE ROUTES
      */
@@ -164,8 +188,14 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/fees/reports/class/{classId}', [FeeManagementController::class, 'getClassReport']);
     Route::get('/fees/reports/daily/{date}', [FeeManagementController::class, 'getDailyReport']);
     
-    // Utilities
+    // Fee Utilities
     Route::get('/fees/classes', [FeeManagementController::class, 'getClasses']);
+
+    // ── Push Notifications ──────────────────────────────────────
+    Route::post('/push/subscribe',   [PushSubscriptionController::class, 'subscribe']);
+    Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe']);
+    Route::post('/push/test',        [PushSubscriptionController::class, 'test']);
+    Route::post('/push/send',        [PushSubscriptionController::class, 'send']);
 });
 
 /**
@@ -197,6 +227,10 @@ Route::middleware('auth:sanctum')->prefix('student')->group(function () {
     Route::post('/achievements', [AchievementController::class, 'store']);
     Route::get('/achievement-categories', [AchievementController::class, 'categories']);
 
+    // Student Announcements
+    Route::get('/announcements', [App\Http\Controllers\AnnouncementController::class, 'studentIndex']);
+    Route::post('/announcements/{announcement}/read', [App\Http\Controllers\AnnouncementController::class, 'markRead']);
+
     // Transactions
     Route::get('/transactions', [App\Http\Controllers\StudentTransactionController::class, 'index']);
     
@@ -210,8 +244,13 @@ Route::middleware('auth:sanctum')->prefix('student')->group(function () {
 
 // Principal-only routes for achievement management
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/achievement-settings', [App\Http\Controllers\AchievementSettingsController::class, 'index']);
+    Route::post('/achievement-settings/categories', [App\Http\Controllers\AchievementSettingsController::class, 'storeCategory']);
+    Route::put('/achievement-settings/categories/{id}', [App\Http\Controllers\AchievementSettingsController::class, 'updateCategory']);
+    Route::delete('/achievement-settings/categories/{id}', [App\Http\Controllers\AchievementSettingsController::class, 'destroyCategory']);
+    Route::post('/achievement-settings/thresholds', [App\Http\Controllers\AchievementSettingsController::class, 'updateThresholds']);
+
     Route::get('/achievements', [AchievementController::class, 'all']); // All achievements for review
     Route::post('/achievements/{achievement}/approve', [AchievementController::class, 'approve']);
     Route::post('/achievements/{achievement}/reject', [AchievementController::class, 'reject']);
 });
-

@@ -52,15 +52,16 @@ class LegacyFeeImportSeeder extends Seeder
                 $monthlyStr = $row[2] ?? 0;
                 $remainingStr = $row[3] ?? 0; // The Remaining column is index 3
 
-                // Extract Ad No (first numeric part)
+                // Extract Ad No (first part, can be H123 or 791)
                 // "791 MUHAMMED..." -> 791
-                if (!preg_match('/^(\d+)/', trim($adNoName), $matches)) {
+                // "H220 MUHAMMED..." -> H220
+                if (!preg_match('/^([Hh]?\d+)/', trim($adNoName), $matches)) {
                     // Try to find ANY number if not at start, or just skip
                     // $this->command->warn("  Skipping row (No Ad No found): " . $adNoName);
                     // $skipped++;
                     continue; 
                 }
-                $rollNo = $matches[1];
+                $rollNo = strtoupper($matches[1]); // Ensure H is uppercase if present
 
                 // Parse Amounts
                 // Handle "NONE", empty, or text as 0

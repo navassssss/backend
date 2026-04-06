@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Report;
 use App\Models\Task;
+use App\Services\WebPushService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller
 {
+    public function __construct(private readonly WebPushService $push) {}
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -28,6 +31,11 @@ class ReportController extends Controller
             );
             $query->when($request->status === 'reviewed', fn ($q) => $q->whereIn('status', ['approved', 'rejected'])
             );
+        }
+
+        // Filter by duty: look through tasks that belong to this duty
+        if ($request->duty_id) {
+            $query->whereHas('task', fn ($q) => $q->where('duty_id', $request->duty_id));
         }
 
         return $query->latest()->get();
@@ -134,6 +142,14 @@ class ReportController extends Controller
         $report->load('teacher');
         if ($report->teacher) {
             $report->teacher->notify(new \App\Notifications\ReportReviewed($report, Auth::user()));
+
+            // Real Browser Push Notification
+            $this->push->sendToUser($report->teacher_id, [
+                'title' => 'Report Approved ✅',
+                'body'  => "Your report for " . ($report->task->title ?? 'Duty') . " has been approved.",
+                'url'   => "/tasks/" . $report->task_id,
+                'tag'   => "report-approved-" . $report->id
+            ]);
         }
 
         return response()->json([
@@ -155,6 +171,14 @@ class ReportController extends Controller
         $report->load('teacher');
         if ($report->teacher) {
             $report->teacher->notify(new \App\Notifications\ReportReviewed($report, Auth::user()));
+
+            // Real Browser Push Notification
+            $this->push->sendToUser($report->teacher_id, [
+                'title' => 'Report Rejected ❌',
+                'body'  => "Your report requires changes: " . \Illuminate\Support\Str::limit($request->review_note, 50),
+                'url'   => "/tasks/" . $report->task_id,
+                'tag'   => "report-rejected-" . $report->id
+            ]);
         }
 
         $report->task->update(['status' => 'pending']);

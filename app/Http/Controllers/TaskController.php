@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Task;
+use App\Services\WebPushService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class TaskController extends Controller
 {
+    public function __construct(private readonly WebPushService $push) {}
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -60,7 +63,16 @@ class TaskController extends Controller
             // Send notification
             $assignedUser = \App\Models\User::find($teacherId);
             if ($assignedUser) {
+                // Database notification (for the bell icon in-app)
                 $assignedUser->notify(new \App\Notifications\TaskAssigned($task, Auth::user()));
+                
+                // Real Browser Push Notification
+                $this->push->sendToUser($teacherId, [
+                    'title' => 'New Task Assigned',
+                    'body'  => Auth::user()->name . " assigned you a task: " . $task->title,
+                    'url'   => "/tasks/" . $task->id,
+                    'tag'   => "task-assigned-" . $task->id
+                ]);
             }
 
             $createdTasks[] = $task;

@@ -28,6 +28,21 @@ class User extends Authenticatable
             ->withPivot(['assigned_by', 'start_date', 'end_date', 'order_index'])
             ->withTimestamps();
     }
+
+    public function permissions()
+    {
+        return $this->belongsToMany(Permission::class);
+    }
+
+    public function hasPermission($permissionName): bool
+    {
+        if ($this->isPrincipal()) {
+            return true;
+        }
+
+        return $this->permissions()->where('name', $permissionName)->exists();
+    }
+
     // tasks
     public function tasks()
     {
@@ -48,6 +63,7 @@ class User extends Authenticatable
         'phone',
         'avatar',
         'can_review_achievements',
+        'is_vice_principal',
     ];
 
     /**
@@ -71,6 +87,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'can_review_achievements' => 'boolean',
+            'is_vice_principal' => 'boolean',
         ];
     }
 
@@ -102,6 +119,7 @@ class User extends Authenticatable
 
     public function isPrincipal(): bool
     {
-        return in_array($this->role, ['principal', 'manager']);
+        return in_array($this->role, ['principal', 'manager'])
+            || ($this->role === 'teacher' && $this->is_vice_principal);
     }
 }
