@@ -100,27 +100,29 @@ class AnnouncementController extends Controller
         // ── Real-time Push Notification ──
         if ($announcement->published_at) {
             $payload = [
-                'title' => '📣 ' . $announcement->title,
-                'body'  => \Illuminate\Support\Str::limit(strip_tags($announcement->content), 100),
-                'url'   => $announcement->audience_type === 'students' ? '/student/announcements' : '/announcements',
-                'tag'   => "announcement-" . $announcement->id
+                'title'           => '📣 ' . $announcement->title,
+                'body'            => \Illuminate\Support\Str::limit(strip_tags($announcement->content), 100),
+                'url'             => $announcement->audience_type === 'students' ? '/student/announcements' : '/announcements',
+                'tag'             => "announcement-" . $announcement->id,
+                'announcement_id' => $announcement->id
             ];
 
             if ($announcement->target_type === 'all') {
                 if ($announcement->audience_type === 'teachers') {
-                    // Send to all staff
+                    // Send to all staff via Queue
                     $teacherIds = User::where('role', '!=', 'student')->pluck('id')->toArray();
-                    $this->push->sendToUsers($teacherIds, $payload);
+                    \App\Jobs\SendBulkPushNotification::dispatch($teacherIds, $payload);
                 } else {
                     // Send to everyone (broadcast)
-                    $this->push->broadcast($payload);
+                    $allIds = User::pluck('id')->toArray();
+                    \App\Jobs\SendBulkPushNotification::dispatch($allIds, $payload);
                 }
             } elseif ($announcement->target_type === 'specific') {
-                $this->push->sendToUsers($validated['target_ids'] ?? [], $payload);
+                \App\Jobs\SendBulkPushNotification::dispatch($validated['target_ids'] ?? [], $payload);
             } elseif ($announcement->target_type === 'class') {
-                // Find all students in these classes
+                // Find all students in these classes via Queue
                 $studentIds = User::whereIn('class_id', $validated['target_ids'] ?? [])->pluck('id')->toArray();
-                $this->push->sendToUsers($studentIds, $payload);
+                \App\Jobs\SendBulkPushNotification::dispatch($studentIds, $payload);
             }
         }
 
