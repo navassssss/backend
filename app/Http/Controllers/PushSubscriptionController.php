@@ -17,6 +17,8 @@ class PushSubscriptionController extends Controller
      */
     public function subscribe(Request $request): JsonResponse
     {
+        \Illuminate\Support\Facades\Log::info("[WebPush] Received subscription request from user: " . $request->user()->id, $request->all());
+
         $request->validate([
             'endpoint' => 'required|url',
             'keys'     => 'nullable|array',
@@ -26,7 +28,7 @@ class PushSubscriptionController extends Controller
 
         $user = $request->user();
 
-        PushSubscription::updateOrCreate(
+        $sub = PushSubscription::updateOrCreate(
             ['endpoint' => $request->endpoint],
             [
                 'user_id'    => $user->id,
@@ -35,6 +37,8 @@ class PushSubscriptionController extends Controller
                 'user_agent' => $request->userAgent(),
             ]
         );
+
+        \Illuminate\Support\Facades\Log::info("[WebPush] Subscription saved/updated successfully for User {$user->id}, Sub ID: {$sub->id}");
 
         return response()->json(['message' => 'Subscription saved'], 201);
     }

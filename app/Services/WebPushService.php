@@ -50,10 +50,16 @@ class WebPushService
     public function sendToUser(int $userId, array $payload): void
     {
         $subs = PushSubscription::where('user_id', $userId)->get();
+        if ($subs->isEmpty()) {
+            Log::warning("[WebPush] No subscriptions found for User ID: {$userId}. Cannot send push.");
+            return;
+        }
+
         foreach ($subs as $sub) {
             /** @var PushSubscription $sub */
             $ok = $this->sendToSubscription($sub, $payload);
             if (!$ok) {
+                Log::warning("[WebPush] Subscription {$sub->id} failed and was deleted.");
                 $sub->delete();
             }
         }
