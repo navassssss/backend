@@ -22,7 +22,8 @@ jobs:
             cd /home/afeej/academics/backend
 
             # Pull the latest changes
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             # Install/Update Dependencies
             composer install --no-dev --optimize-autoloader
