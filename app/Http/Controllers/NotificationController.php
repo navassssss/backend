@@ -11,10 +11,11 @@ class NotificationController extends Controller
     {
         $user = Auth::user();
 
-        // Return all notifications, latest first
-        // Laravel's User model uses Notifiable trait usually, so $user->notifications
-        // But verifying User model has Notifiable trait.
-        return $user->notifications;
+        return $user->notifications->map(function ($notification) {
+            $notification->created_at_human = \Illuminate\Support\Carbon::parse($notification->created_at)->inUserTimezone()->diffForHumans();
+            $notification->created_at_formatted = \Illuminate\Support\Carbon::parse($notification->created_at)->inUserTimezone()->format('M d, Y h:i A');
+            return $notification;
+        });
     }
 
     public function markAsRead($id)

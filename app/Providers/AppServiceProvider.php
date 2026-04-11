@@ -14,11 +14,11 @@ class AppServiceProvider extends ServiceProvider
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        //
+        \Illuminate\Support\Carbon::macro('inUserTimezone', function () {
+            /** @var \Illuminate\Support\Carbon $this */
+            return $this->setTimezone(auth()->user()?->timezone ?? config('app.timezone', 'UTC'));
+        });
     }
 }

@@ -66,6 +66,21 @@ class WebPushService
     }
 
     /**
+     * Send to all subscriptions of multiple users without detailed logging (for bulk).
+     */
+    public function sendToUsersSilently(array $userIds, array $payload): void
+    {
+        $subs = PushSubscription::whereIn('user_id', $userIds)->get();
+        foreach ($subs as $sub) {
+            /** @var PushSubscription $sub */
+            $result = $this->dispatch($sub->endpoint, $sub->p256dh_key, $sub->auth_token, $payload, true);
+            if (!$result) {
+                $sub->delete();
+            }
+        }
+    }
+
+    /**
      * Send to all subscriptions of multiple users.
      */
     public function sendToUsers(array $userIds, array $payload): void
@@ -100,7 +115,8 @@ class WebPushService
         string $endpoint,
         ?string $p256dh,
         ?string $auth,
-        array $payload
+        array $payload,
+        bool $silent = false
     ): bool {
         $body    = json_encode($payload);
         $headers = $this->buildHeaders($endpoint, $body, $p256dh, $auth);
@@ -120,11 +136,11 @@ class WebPushService
         curl_close($ch);
 
         if ($err) {
-            Log::error("[WebPush] Curl Error for {$endpoint}: {$err}");
+            if (!$silent) Log::error("[WebPush] Curl Error for {$endpoint}: {$err}");
             return true; // Don't delete on network error
         }
 
-        Log::info("[WebPush] Push server response: HTTP {$httpCode} - " . substr($response, 0, 500));
+        if (!$silent) Log::info("[WebPush] Push server response: HTTP {$httpCode} - " . substr($response, 0, 500));
 
 
         // 201 = success, 410 = subscription expired
@@ -133,7 +149,7 @@ class WebPushService
         }
 
         if ($httpCode >= 400) {
-            Log::warning("[WebPush] HTTP {$httpCode} for {$endpoint}: " . substr($response, 0, 200));
+            if (!$silent) Log::warning("[WebPush] HTTP {$httpCode} for {$endpoint}: " . substr($response, 0, 200));
             return true; // Don't delete, might be transient
         }
 
