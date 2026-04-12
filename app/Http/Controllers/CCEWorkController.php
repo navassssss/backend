@@ -36,25 +36,29 @@ class CCEWorkController extends Controller
         }
 
         $works = $query->orderBy('due_date', 'desc')
+            ->withCount([
+                'submissions as submissions_count',
+                'submissions as evaluated_count' => fn($q) => $q->where('status', 'evaluated'),
+            ])
             ->get()
-            ->map(function($work) {
+            ->map(function ($work) {
                 return [
-                    'id' => $work->id,
-                    'title' => $work->title,
-                    'description' => $work->description,
-                    'level' => $work->level,
-                    'week' => $work->week,
-                    'subjectId' => $work->subject_id,
-                    'subjectName' => $work->subject->name,
-                    'className' => $work->subject->classRoom->name,
-                    'teacherName' => $work->subject->teacher->name,
-                    'toolMethod' => $work->tool_method,
-                    'issuedDate' => $work->issued_date->format('Y-m-d'),
-                    'dueDate' => $work->due_date->format('Y-m-d'),
-                    'maxMarks' => $work->max_marks,
-                    'submissionType' => $work->submission_type,
-                    'submissionsCount' => $work->submissions()->count(),
-                    'evaluatedCount' => $work->submissions()->where('status', 'evaluated')->count()
+                    'id'              => $work->id,
+                    'title'           => $work->title,
+                    'description'     => $work->description,
+                    'level'           => $work->level,
+                    'week'            => $work->week,
+                    'subjectId'       => $work->subject_id,
+                    'subjectName'     => $work->subject->name,
+                    'className'       => $work->subject->classRoom->name,
+                    'teacherName'     => $work->subject->teacher->name,
+                    'toolMethod'      => $work->tool_method,
+                    'issuedDate'      => $work->issued_date->format('Y-m-d'),
+                    'dueDate'         => $work->due_date->format('Y-m-d'),
+                    'maxMarks'        => $work->max_marks,
+                    'submissionType'  => $work->submission_type,
+                    'submissionsCount' => $work->submissions_count,
+                    'evaluatedCount'  => $work->evaluated_count,
                 ];
             });
 
@@ -67,33 +71,33 @@ class CCEWorkController extends Controller
         
         $subjects = $subjectsQuery->get();
         
-        $subjectsSummary = $subjects->map(function($subject) {
-            $allWorks = CCEWork::where('subject_id', $subject->id)
-                ->with(['submissions' => function($query) {
-                    $query->whereNotNull('marks');
-                }])
-                ->get();
-            
-            $totalWorks = $allWorks->count();
-            $completedWorks = 0;
-            
-            foreach ($allWorks as $work) {
-                $now = now();
-                $deadlinePassed = $work->deadline ? $now->gt($work->deadline) : false;
-                $evaluatedCount = $work->submissions->count();
-                
-                if ($deadlinePassed && $evaluatedCount > 0) {
-                    $completedWorks++;
-                }
-            }
-            
+        // Preload all work counts for subjects in ONE query per aggregation
+        $subjectIds = $subjects->pluck('id');
+        $workCountMap = CCEWork::selectRaw('subject_id, COUNT(*) as total, SUM(CASE WHEN deadline IS NOT NULL AND deadline < NOW() THEN 1 ELSE 0 END) as past_deadline')
+            ->whereIn('subject_id', $subjectIds)
+            ->groupBy('subject_id')
+            ->get()
+            ->keyBy('subject_id');
+
+        $evalCountMap = CCEWork::selectRaw('cce_works.subject_id, COUNT(DISTINCT cce_submissions.work_id) as eval_count')
+            ->join('cce_submissions', 'cce_works.id', '=', 'cce_submissions.work_id')
+            ->whereIn('cce_works.subject_id', $subjectIds)
+            ->whereNotNull('cce_submissions.marks')
+            ->groupBy('cce_works.subject_id')
+            ->pluck('eval_count', 'subject_id');
+
+        $subjectsSummary = $subjects->map(function ($subject) use ($workCountMap, $evalCountMap) {
+            $data = $workCountMap[$subject->id] ?? null;
+            $totalWorks    = $data?->total ?? 0;
+            $completedWorks = $data?->past_deadline > 0 ? ($evalCountMap[$subject->id] ?? 0) : 0;
+
             return [
-                'subject_id' => $subject->id,
-                'subject_name' => $subject->name,
-                'max_marks' => $subject->final_max_marks,
-                'class_name' => $subject->classRoom->name,
-                'total_works' => $totalWorks,
-                'completed_works' => $completedWorks
+                'subject_id'      => $subject->id,
+                'subject_name'    => $subject->name,
+                'max_marks'       => $subject->final_max_marks,
+                'class_name'      => $subject->classRoom->name,
+                'total_works'     => $totalWorks,
+                'completed_works' => $completedWorks,
             ];
         });
 
@@ -207,147 +211,115 @@ class CCEWorkController extends Controller
     public function getStudentMarks(Request $request)
     {
         $classId = $request->query('class_id');
-        $search = $request->query('search');
-        $page = $request->query('page', 1);
-        $perPage = $request->query('per_page', 10);
-        
-        // TEMPORARY DEBUG - Always show what we receive
-        return response()->json([
-            'debug' => true,
-            'message' => 'Debug: All parameters',
-            'search_value' => $search,
-            'search_is_null' => is_null($search),
-            'search_is_empty' => empty($search),
-            'class_id' => $classId,
-            'page' => $page,
-            'per_page' => $perPage,
-            'all_query_params' => $request->query(),
-            'timestamp' => now()->toDateTimeString()
-        ]);
-        
-        // Get students based on class filter and search
-        $studentsQuery = Student::with(['user', 'class']);
+        $search  = $request->query('search');
+        $page    = (int) $request->query('page', 1);
+        $perPage = (int) $request->query('per_page', 10);
+
+        // Build student base query
+        $studentsQuery = Student::with(['user:id,name', 'class:id,name'])
+            ->select('students.id', 'students.user_id', 'students.class_id', 'students.username');
+
         if ($classId) {
             $studentsQuery->where('class_id', $classId);
         }
         if ($search) {
-            $studentsQuery->where(function($query) use ($search) {
-                // Search in user name
-                $query->whereHas('user', function($q) use ($search) {
-                    $q->where('name', 'like', '%' . $search . '%');
-                })
-                // OR search in student username (roll number)
-                ->orWhere('username', 'like', '%' . $search . '%');
+            $studentsQuery->where(function ($q) use ($search) {
+                $q->whereHas('user', fn($uq) => $uq->where('name', 'like', "%{$search}%"))
+                  ->orWhere('username', 'like', "%{$search}%");
             });
         }
-        $allStudents = $studentsQuery->get();
-        
-        // Debug logging
-        \Log::info('CCE Student Marks - Search Debug', [
-            'search_param' => $search,
-            'class_id' => $classId,
-            'total_students_found' => $allStudents->count()
-        ]);
 
-        // Get all subjects
-        $subjects = \App\Models\Subject::all();
+        $studentIds = $studentsQuery->pluck('students.id');
 
-        // Calculate marks for all students first
-        $allStudentMarks = $allStudents->map(function($student) use ($subjects) {
-            $subjectMarks = [];
-            $totalObtained = 0;
-            $totalMarks = 0;
-
-            foreach ($subjects as $subject) {
-                // Get all works for this subject
-                $works = CCEWork::where('subject_id', $subject->id)->get();
-                $subjectTotalMarks = $works->sum('max_marks');
-                
-                // Get student's evaluated submissions for this subject
-                $submissions = CCESubmission::whereHas('work', function($query) use ($subject) {
-                    $query->where('subject_id', $subject->id);
-                })
-                ->where('student_id', $student->id)
-                ->whereNotNull('marks_obtained')
-                ->with('work')
-                ->get();
-
-                $subjectObtained = $submissions->sum('marks_obtained');
-                
-                // Only include subjects where student has at least one evaluation
-                if ($submissions->count() > 0) {
-                    // Convert to subject's final_max_marks if set
-                    $finalMaxMarks = $subject->final_max_marks ?? $subjectTotalMarks;
-                    $convertedObtained = $subjectTotalMarks > 0 
-                        ? ($subjectObtained / $subjectTotalMarks) * $finalMaxMarks 
-                        : 0;
-                    
-                    $percentage = $finalMaxMarks > 0 
-                        ? ($convertedObtained / $finalMaxMarks) * 100 
-                        : 0;
-
-                    $subjectMarks[$subject->name] = [
-                        'subjectName' => $subject->name,
-                        'obtained' => round($convertedObtained, 2),
-                        'total' => $finalMaxMarks,
-                        'percentage' => round($percentage, 2)
-                    ];
-
-                    $totalObtained += $convertedObtained;
-                    $totalMarks += $finalMaxMarks;
-                }
-            }
-
-            // Only include students who have at least one subject evaluation
-            if (count($subjectMarks) > 0) {
-                $overallPercentage = $totalMarks > 0 
-                    ? ($totalObtained / $totalMarks) * 100 
-                    : 0;
-
-                return [
-                    'studentId' => $student->id,
-                    'studentName' => $student->user->name,
-                    'rollNumber' => $student->username,
-                    'className' => $student->class->name ?? 'N/A',
-                    'subjectMarks' => $subjectMarks,
-                    'totalObtained' => round($totalObtained, 2),
-                    'totalMarks' => $totalMarks,
-                    'overallPercentage' => round($overallPercentage, 2)
-                ];
-            }
-
-            return null;
-        })->filter()->values();
-        
-        \Log::info('CCE Student Marks - After filtering', [
-            'students_with_marks' => $allStudentMarks->count()
-        ]);
-
-        // Apply pagination
-        $total = $allStudentMarks->count();
-        $studentMarks = $allStudentMarks->slice(($page - 1) * $perPage, $perPage)->values();
-
-        // Calculate total stats from all filtered results
-        $allSubjects = [];
-        $totalPercentageSum = 0;
-        foreach ($allStudentMarks as $student) {
-            foreach ($student['subjectMarks'] as $subjectName => $marks) {
-                $allSubjects[$subjectName] = true;
-            }
-            $totalPercentageSum += $student['overallPercentage'];
+        if ($studentIds->isEmpty()) {
+            return response()->json(['data' => [], 'total' => 0, 'current_page' => $page, 'per_page' => $perPage, 'last_page' => 1, 'stats' => ['total_students' => 0, 'total_subjects' => 0, 'average_percentage' => 0]]);
         }
 
+        // ── Single aggregation query for all students × all subjects ──────────
+        $aggregates = \DB::table('cce_submissions as s')
+            ->join('cce_works as w', 's.work_id', '=', 'w.id')
+            ->join('subjects as sub', 'w.subject_id', '=', 'sub.id')
+            ->select(
+                's.student_id',
+                'sub.id as subject_id',
+                'sub.name as subject_name',
+                'sub.final_max_marks',
+                \DB::raw('SUM(s.marks_obtained) as obtained'),
+                \DB::raw('SUM(w.max_marks) as raw_max')
+            )
+            ->whereIn('s.student_id', $studentIds)
+            ->whereNotNull('s.marks_obtained')
+            ->where('s.status', 'evaluated')
+            ->groupBy('s.student_id', 'sub.id', 'sub.name', 'sub.final_max_marks')
+            ->get()
+            ->groupBy('student_id');
+
+        $students = $studentsQuery->get()->keyBy('id');
+
+        // Build per-student result in pure PHP (no more DB calls in loop)
+        $allStudentMarks = $studentIds
+            ->map(function ($sid) use ($students, $aggregates) {
+                $student   = $students[$sid];
+                $subjectRows = $aggregates->get($sid, collect());
+
+                if ($subjectRows->isEmpty()) return null;
+
+                $subjectMarks  = [];
+                $totalObtained = 0;
+                $totalMarks    = 0;
+
+                foreach ($subjectRows as $row) {
+                    $finalMax  = (float) ($row->final_max_marks ?? $row->raw_max);
+                    $converted = $row->raw_max > 0
+                        ? ($row->obtained / $row->raw_max) * $finalMax
+                        : 0;
+                    $pct = $finalMax > 0 ? ($converted / $finalMax) * 100 : 0;
+
+                    $subjectMarks[$row->subject_name] = [
+                        'subjectName' => $row->subject_name,
+                        'obtained'    => round($converted, 2),
+                        'total'       => $finalMax,
+                        'percentage'  => round($pct, 2),
+                    ];
+
+                    $totalObtained += $converted;
+                    $totalMarks    += $finalMax;
+                }
+
+                $overallPct = $totalMarks > 0 ? ($totalObtained / $totalMarks) * 100 : 0;
+
+                return [
+                    'studentId'         => $student->id,
+                    'studentName'       => $student->user->name ?? 'Unknown',
+                    'rollNumber'        => $student->username,
+                    'className'         => $student->class->name ?? 'N/A',
+                    'subjectMarks'      => $subjectMarks,
+                    'totalObtained'     => round($totalObtained, 2),
+                    'totalMarks'        => $totalMarks,
+                    'overallPercentage' => round($overallPct, 2),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        // Paginate in PHP (data already in memory)
+        $total        = $allStudentMarks->count();
+        $studentMarks = $allStudentMarks->slice(($page - 1) * $perPage, $perPage)->values();
+
+        $totalSubjects      = collect($aggregates->flatten(1))->pluck('subject_name')->unique()->count();
+        $avgPct             = $total > 0 ? round($allStudentMarks->avg('overallPercentage'), 2) : 0;
+
         return response()->json([
-            'data' => $studentMarks,
-            'current_page' => (int)$page,
-            'per_page' => (int)$perPage,
-            'total' => $total,
-            'last_page' => ceil($total / $perPage),
-            'stats' => [
-                'total_students' => $total,
-                'total_subjects' => count($allSubjects),
-                'average_percentage' => $total > 0 ? round($totalPercentageSum / $total, 2) : 0
-            ]
+            'data'         => $studentMarks,
+            'current_page' => $page,
+            'per_page'     => $perPage,
+            'total'        => $total,
+            'last_page'    => max(1, (int) ceil($total / $perPage)),
+            'stats'        => [
+                'total_students'     => $total,
+                'total_subjects'     => $totalSubjects,
+                'average_percentage' => $avgPct,
+            ],
         ]);
     }
 

@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller
 {
-    public function __construct(private readonly WebPushService $push) {}
+
 
     public function index(Request $request)
     {
@@ -38,7 +38,7 @@ class ReportController extends Controller
             $query->whereHas('task', fn ($q) => $q->where('duty_id', $request->duty_id));
         }
 
-        return $query->latest()->get();
+        return $query->latest()->paginate((int) $request->query('per_page', 20));
     }
 
     public function store(Request $request)
@@ -143,8 +143,8 @@ class ReportController extends Controller
         if ($report->teacher) {
             $report->teacher->notify(new \App\Notifications\ReportReviewed($report, Auth::user()));
 
-            // Real Browser Push Notification
-            $this->push->sendToUser($report->teacher_id, [
+            // Real Browser Push Notification dispatched natively to background queue
+            \App\Jobs\SendPushNotificationJob::dispatch($report->teacher_id, [
                 'title' => 'Report Approved ✅',
                 'body'  => "Your report for " . ($report->task->title ?? 'Duty') . " has been approved.",
                 'url'   => "/tasks/" . $report->task_id,
@@ -172,8 +172,8 @@ class ReportController extends Controller
         if ($report->teacher) {
             $report->teacher->notify(new \App\Notifications\ReportReviewed($report, Auth::user()));
 
-            // Real Browser Push Notification
-            $this->push->sendToUser($report->teacher_id, [
+            // Real Browser Push Notification dispatched natively to background queue
+            \App\Jobs\SendPushNotificationJob::dispatch($report->teacher_id, [
                 'title' => 'Report Rejected ❌',
                 'body'  => "Your report requires changes: " . \Illuminate\Support\Str::limit($request->review_note, 50),
                 'url'   => "/tasks/" . $report->task_id,

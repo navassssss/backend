@@ -6,6 +6,7 @@ use App\Events\AchievementApproved;
 use App\Models\Achievement;
 use App\Models\AchievementCategory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 class AchievementController extends Controller
@@ -47,7 +48,9 @@ class AchievementController extends Controller
      */
     public function categories()
     {
-        $categories = AchievementCategory::where('is_active', true)->get();
+        $categories = Cache::remember('achievement:categories', now()->addHours(24), function () {
+            return AchievementCategory::where('is_active', true)->get();
+        });
 
         return response()->json($categories);
     }

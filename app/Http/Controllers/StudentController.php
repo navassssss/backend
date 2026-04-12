@@ -89,120 +89,94 @@ class StudentController extends Controller
     public function getAttendance($id, Request $request)
     {
         $student = Student::findOrFail($id);
-        
-        // Get all attendance records for this student
+
+        // Default to last 90 days; caller can override with ?days=180 etc.
+        $days  = max(1, (int) $request->query('days', 90));
+        $since = now()->subDays($days)->format('Y-m-d');
+
+        // Scoped load — not full history
         $allRecords = \App\Models\AttendanceRecord::where('student_id', $student->id)
-            ->with(['attendance.classRoom', 'attendance.marker'])
+            ->whereHas('attendance', fn($q) => $q->where('date', '>=', $since))
+            ->with(['attendance:id,date,session,class_id', 'attendance.classRoom:id,name'])
             ->orderBy('created_at', 'desc')
             ->get();
-        
+
         // Group records by date to calculate daily attendance
-        $dailyAttendance = $allRecords->groupBy(function($record) {
+        $dailyAttendance = $allRecords->groupBy(function ($record) {
             return $record->attendance->date;
-        })->map(function($dayRecords) {
-            $morning = $dayRecords->firstWhere('attendance.session', 'morning');
+        })->map(function ($dayRecords) {
+            $morning   = $dayRecords->firstWhere('attendance.session', 'morning');
             $afternoon = $dayRecords->firstWhere('attendance.session', 'afternoon');
-            
-            // A day is considered present if BOTH sessions are present
-            // A day is considered absent if BOTH sessions are absent
-            // If mixed (one present, one absent), count as 0.5 present
-            $morningPresent = $morning && $morning->status === 'present';
+
+            $morningPresent   = $morning   && $morning->status   === 'present';
             $afternoonPresent = $afternoon && $afternoon->status === 'present';
-            
-            if ($morningPresent && $afternoonPresent) {
-                return 1; // Full day present
-            } elseif (!$morningPresent && !$afternoonPresent) {
-                return 0; // Full day absent
-            } else {
-                return 0.5; // Half day (one session present, one absent)
-            }
+
+            if ($morningPresent && $afternoonPresent)   return 1;
+            if (!$morningPresent && !$afternoonPresent) return 0;
+            return 0.5;
         });
-        
-        // Calculate overall stats
-        $totalDays = $dailyAttendance->count();
-        $presentDays = $dailyAttendance->sum(); // Sum of all values (1, 0.5, or 0)
-        $absentDays = $totalDays - $presentDays;
-        $percentage = $totalDays > 0 ? round(($presentDays / $totalDays) * 100, 2) : 0;
-        
-        // Get today's attendance
-        $today = now()->format('Y-m-d');
-        $todayRecords = $allRecords->filter(function($record) use ($today) {
-            return $record->attendance->date === $today;
-        });
-        
-        $todayMorning = $todayRecords->firstWhere('attendance.session', 'morning');
+
+        $totalDays   = $dailyAttendance->count();
+        $presentDays = $dailyAttendance->sum();
+        $absentDays  = $totalDays - $presentDays;
+        $percentage  = $totalDays > 0 ? round(($presentDays / $totalDays) * 100, 2) : 0;
+
+        // Today's attendance
+        $today       = now()->format('Y-m-d');
+        $todayRecords = $allRecords->filter(fn($r) => $r->attendance->date === $today);
+
+        $todayMorning   = $todayRecords->firstWhere('attendance.session', 'morning');
         $todayAfternoon = $todayRecords->firstWhere('attendance.session', 'afternoon');
-        
-        // Get absent dates (grouped by date)
+
+        // Absent dates (last 20)
         $absentDates = $allRecords
-            ->groupBy(function($record) {
-                return $record->attendance->date;
-            })
-            ->map(function($records, $date) {
+            ->groupBy(fn($r) => $r->attendance->date)
+            ->map(function ($records, $date) {
                 $absentSessions = $records->where('status', 'absent')->pluck('attendance.session')->toArray();
-                if (empty($absentSessions)) {
-                    return null;
-                }
+                if (empty($absentSessions)) return null;
                 return [
-                    'date' => $date,
-                    'sessions' => $absentSessions,
-                    'count' => count($absentSessions),
-                    'isFullDay' => count($absentSessions) === 2
+                    'date'      => $date,
+                    'sessions'  => $absentSessions,
+                    'count'     => count($absentSessions),
+                    'isFullDay' => count($absentSessions) === 2,
                 ];
             })
             ->filter()
             ->values()
             ->sortByDesc('date')
-            ->take(20); // Last 20 absent dates
-        
-        // Recent records for display (grouped by date)
+            ->take(20);
+
+        // Recent records (last 10 dates)
         $recentRecords = $allRecords
-            ->groupBy(function($record) {
-                return $record->attendance->date;
-            })
-            ->map(function($records, $date) {
-                $morning = $records->firstWhere('attendance.session', 'morning');
+            ->groupBy(fn($r) => $r->attendance->date)
+            ->map(function ($records, $date) {
+                $morning   = $records->firstWhere('attendance.session', 'morning');
                 $afternoon = $records->firstWhere('attendance.session', 'afternoon');
-                
                 return [
-                    'date' => $date,
-                    'morning' => $morning ? [
-                        'status' => $morning->status,
-                        'className' => $morning->attendance->classRoom->name ?? 'Unknown'
-                    ] : null,
-                    'afternoon' => $afternoon ? [
-                        'status' => $afternoon->status,
-                        'className' => $afternoon->attendance->classRoom->name ?? 'Unknown'
-                    ] : null
+                    'date'      => $date,
+                    'morning'   => $morning   ? ['status' => $morning->status,   'className' => $morning->attendance->classRoom->name   ?? 'Unknown'] : null,
+                    'afternoon' => $afternoon ? ['status' => $afternoon->status, 'className' => $afternoon->attendance->classRoom->name ?? 'Unknown'] : null,
                 ];
             })
             ->sortByDesc('date')
             ->take(10)
             ->values();
-        
+
         return response()->json([
-            'student' => [
-                'id' => $student->id,
-                'name' => $student->name,
-            ],
+            'student'      => ['id' => $student->id, 'name' => $student->name],
+            'range_days'   => $days,
             'overallStats' => [
-                'totalDays' => $totalDays,
+                'totalDays'   => $totalDays,
                 'presentDays' => $presentDays,
-                'absentDays' => $absentDays,
-                'percentage' => $percentage
+                'absentDays'  => $absentDays,
+                'percentage'  => $percentage,
             ],
             'today' => [
-                'morning' => $todayMorning ? [
-                    'status' => $todayMorning->status,
-                    'className' => $todayMorning->attendance->classRoom->name ?? 'Unknown'
-                ] : null,
-                'afternoon' => $todayAfternoon ? [
-                    'status' => $todayAfternoon->status,
-                    'className' => $todayAfternoon->attendance->classRoom->name ?? 'Unknown'
-                ] : null
+                'morning'   => $todayMorning   ? ['status' => $todayMorning->status,   'className' => $todayMorning->attendance->classRoom->name   ?? 'Unknown'] : null,
+                'afternoon' => $todayAfternoon ? ['status' => $todayAfternoon->status, 'className' => $todayAfternoon->attendance->classRoom->name ?? 'Unknown'] : null,
             ],
-            'absentDates' => $absentDates,
-            'recentRecords' => $recentRecords
+            'absentDates'   => $absentDates,
+            'recentRecords' => $recentRecords,
         ]);
     }
 
@@ -269,11 +243,11 @@ class StudentController extends Controller
             
             // 1) UPDATE EXISTING STUDENT
             if (!empty($studentData['id'])) {
-                $existingStudent = \App\Models\Student::find($studentData['id']);
+                $existingStudent = Student::find($studentData['id']);
                 
                 // Ensure new roll number is not taken by someone else
                 if (!empty($studentData['roll_number']) && $existingStudent->roll_number !== $studentData['roll_number']) {
-                    $conflict = \App\Models\Student::where('roll_number', $studentData['roll_number'])
+                    $conflict = Student::where('roll_number', $studentData['roll_number'])
                         ->where('id', '!=', $studentData['id'])
                         ->first();
                     if ($conflict) {
@@ -298,7 +272,7 @@ class StudentController extends Controller
             // 2) CREATE NEW STUDENT
             // Check if roll_number is taken globally
             if (!empty($studentData['roll_number'])) {
-                $conflict = \App\Models\Student::where('roll_number', $studentData['roll_number'])->first();
+                $conflict = Student::where('roll_number', $studentData['roll_number'])->first();
                 if ($conflict) {
                     return response()->json(['message' => "Admission number {$studentData['roll_number']} is already taken. Please verify your list."], 422);
                 }
@@ -319,7 +293,7 @@ class StudentController extends Controller
             $rollObj = $studentData['roll_number'] ?? ('TEMP' . $user->id);
 
             // Create Student
-            $student = \App\Models\Student::create([
+            $student = Student::create([
                 'user_id' => $user->id,
                 'class_id' => $studentData['class_id'] ?? null,
                 'username' => 'st_' . $rollObj,
@@ -350,7 +324,7 @@ class StudentController extends Controller
             'student_ids.*' => 'integer|exists:students,id',
         ]);
 
-        $students = \App\Models\Student::whereIn('id', $validated['student_ids'])->get();
+        $students = Student::whereIn('id', $validated['student_ids'])->get();
 
         foreach ($students as $student) {
             // Delete user if it exists

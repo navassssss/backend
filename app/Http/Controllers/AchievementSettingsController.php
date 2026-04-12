@@ -19,11 +19,13 @@ class AchievementSettingsController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $categories = AchievementCategory::orderBy('name')->get();
+        $categories     = Cache::remember('achievement:categories', now()->addHours(24), function () {
+            return AchievementCategory::orderBy('name')->get();
+        });
         $starThresholds = json_decode(Setting::getValue('star_thresholds', '{}'), true);
 
         return response()->json([
-            'categories' => $categories,
+            'categories'      => $categories,
             'star_thresholds' => $starThresholds,
         ]);
     }
@@ -46,11 +48,13 @@ class AchievementSettingsController extends Controller
         ]);
 
         $category = AchievementCategory::create([
-            'name' => $validated['name'],
+            'name'        => $validated['name'],
             'description' => $validated['description'] ?? null,
-            'points' => $validated['points'],
-            'is_active' => $validated['is_active'] ?? true,
+            'points'      => $validated['points'],
+            'is_active'   => $validated['is_active'] ?? true,
         ]);
+
+        Cache::forget('achievement:categories');
 
         return response()->json($category, 201);
     }
@@ -75,11 +79,13 @@ class AchievementSettingsController extends Controller
         ]);
 
         $category->update([
-            'name' => $validated['name'],
+            'name'        => $validated['name'],
             'description' => $validated['description'] ?? null,
-            'points' => $validated['points'],
-            'is_active' => $validated['is_active'] ?? true,
+            'points'      => $validated['points'],
+            'is_active'   => $validated['is_active'] ?? true,
         ]);
+
+        Cache::forget('achievement:categories');
 
         return response()->json($category);
     }
@@ -103,6 +109,8 @@ class AchievementSettingsController extends Controller
         }
 
         $category->delete();
+
+        Cache::forget('achievement:categories');
 
         return response()->json(['message' => 'Category deleted'], 200);
     }

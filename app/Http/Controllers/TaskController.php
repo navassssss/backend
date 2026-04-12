@@ -9,25 +9,28 @@ use Illuminate\Support\Facades\Auth;
 
 class TaskController extends Controller
 {
-    public function __construct(private readonly WebPushService $push) {}
+
 
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $query = Task::with('duty', 'assignedTo');
+        $user  = Auth::user();
+        $limit = max(1, min(100, (int) $request->query('per_page', 50)));
 
-        // If teacher_id is provided → filter by teacher
+        $query = Task::with('duty:id,name', 'assignedTo:id,name,role');
+
         if ($request->has('teacher_id')) {
-            return $query->where('assigned_to', $request->teacher_id)->get();
+            return $query->where('assigned_to', $request->teacher_id)
+                         ->latest('scheduled_date')
+                         ->paginate($limit);
         }
 
-        // If principal → return all tasks
         if ($user->role === 'principal') {
-            return $query->get();
+            return $query->latest('scheduled_date')->paginate($limit);
         }
 
-        // If teacher → only own tasks
-        return $query->where('assigned_to', $user->id)->get();
+        return $query->where('assigned_to', $user->id)
+                     ->latest('scheduled_date')
+                     ->paginate($limit);
     }
 
     /**
@@ -45,33 +48,32 @@ class TaskController extends Controller
             'instructions' => 'nullable|string',
         ]);
 
-        $teacherIds = $request->teacher_ids;
+        $teacherIds   = $request->teacher_ids;
         $createdTasks = [];
 
-        // Create a task for each teacher
+        // Batch-load all assigned teachers in one query
+        $teachers = \App\Models\User::whereIn('id', $teacherIds)->get()->keyBy('id');
+
         foreach ($teacherIds as $teacherId) {
             $task = Task::create([
-                'title' => $request->title,
-                'duty_id' => $request->duty_id,
-                'assigned_to' => $teacherId,
+                'title'          => $request->title,
+                'duty_id'        => $request->duty_id,
+                'assigned_to'    => $teacherId,
                 'scheduled_date' => $request->scheduled_date,
                 'scheduled_time' => $request->scheduled_time,
-                'instructions' => $request->instructions,
-                'status' => 'pending',
+                'instructions'   => $request->instructions,
+                'status'         => 'pending',
             ]);
 
-            // Send notification
-            $assignedUser = \App\Models\User::find($teacherId);
+            $assignedUser = $teachers->get($teacherId);
             if ($assignedUser) {
-                // Database notification (for the bell icon in-app)
                 $assignedUser->notify(new \App\Notifications\TaskAssigned($task, Auth::user()));
-                
-                // Real Browser Push Notification
-                $this->push->sendToUser($teacherId, [
+
+                \App\Jobs\SendPushNotificationJob::dispatch($teacherId, [
                     'title' => 'New Task Assigned',
-                    'body'  => Auth::user()->name . " assigned you a task: " . $task->title,
-                    'url'   => "/tasks/" . $task->id,
-                    'tag'   => "task-assigned-" . $task->id
+                    'body'  => Auth::user()->name . ' assigned you a task: ' . $task->title,
+                    'url'   => '/tasks/' . $task->id,
+                    'tag'   => 'task-assigned-' . $task->id,
                 ]);
             }
 

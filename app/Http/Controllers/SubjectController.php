@@ -121,98 +121,91 @@ class SubjectController extends Controller
     public function getSubjectStatistics($id)
     {
         $subject = Subject::with(['classRoom', 'teacher'])->findOrFail($id);
-        
-        // Get all CCE works for this subject
+
+        // Precount total students once (not inside a loop)
+        $totalStudents = \App\Models\Student::where('class_id', $subject->class_id)->count();
+
+        // Load works with evaluated submission counts (no N+1)
         $works = \App\Models\CCEWork::where('subject_id', $id)
-            ->with(['submissions' => function($query) {
-                $query->whereNotNull('marks_obtained');
-            }])
+            ->withCount([
+                'submissions as evaluated_count' => fn($q) => $q->whereNotNull('marks_obtained'),
+            ])
             ->orderBy('deadline', 'desc')
             ->get();
 
-        $totalWorks = $works->count();
+        $totalWorks    = $works->count();
         $completedWorks = 0;
-        
-        $worksData = $works->map(function($work) use (&$completedWorks, $subject) {
-            $now = now();
+        $now           = now();
+
+        $worksData = $works->map(function ($work) use (&$completedWorks, $totalStudents, $now) {
             $deadlinePassed = $work->deadline ? $now->gt($work->deadline) : false;
-            $evaluatedCount = $work->submissions->count();
-            
-            // Work is completed if deadline passed AND some students are evaluated
-            $isCompleted = $deadlinePassed && $evaluatedCount > 0;
-            if ($isCompleted) {
-                $completedWorks++;
-            }
-            
-            // Get total students from the subject's class
-            $totalStudents = \App\Models\Student::where('class_id', $subject->class_id)->count();
-            
+            $isCompleted    = $deadlinePassed && $work->evaluated_count > 0;
+            if ($isCompleted) $completedWorks++;
+
             return [
-                'id' => $work->id,
-                'title' => $work->title,
-                'description' => $work->description,
-                'max_marks' => $work->max_marks,
-                'deadline' => $work->deadline ? $work->deadline->toISOString() : null,
-                'is_completed' => $isCompleted,
-                'evaluated_count' => $evaluatedCount,
-                'total_students' => $totalStudents
+                'id'              => $work->id,
+                'title'           => $work->title,
+                'description'     => $work->description,
+                'max_marks'       => $work->max_marks,
+                'deadline'        => $work->deadline?->toISOString(),
+                'is_completed'    => $isCompleted,
+                'evaluated_count' => $work->evaluated_count,
+                'total_students'  => $totalStudents,
             ];
         });
 
-        // Calculate student marks aggregation
-        $students = \App\Models\Student::where('class_id', $subject->class_id)
-            ->with(['user'])
-            ->get();
-
-        // Calculate total possible marks from ALL works in this subject
         $totalPossibleMarks = $works->sum('max_marks');
-        
-        $studentMarks = $students->map(function($student) use ($id, $subject, $totalPossibleMarks) {
-            // Get all evaluated submissions for this student in this subject
-            $submissions = \App\Models\CCESubmission::whereHas('work', function($query) use ($id) {
-                $query->where('subject_id', $id);
-            })
-            ->where('student_id', $student->id)
-            ->whereNotNull('marks_obtained')
-            ->with('work')
+
+        // Single SQL aggregation for all students in the class — no per-student loop
+        $studentIds = \App\Models\Student::where('class_id', $subject->class_id)
+            ->pluck('id');
+
+        $obtainedMap = \DB::table('cce_submissions as s')
+            ->join('cce_works as w', 's.work_id', '=', 'w.id')
+            ->select('s.student_id', \DB::raw('SUM(s.marks_obtained) as total_obtained'))
+            ->where('w.subject_id', $id)
+            ->whereNotNull('s.marks_obtained')
+            ->whereIn('s.student_id', $studentIds)
+            ->groupBy('s.student_id')
+            ->pluck('total_obtained', 'student_id');
+
+        $students = \App\Models\Student::where('class_id', $subject->class_id)
+            ->with('user:id,name')
+            ->select('id', 'user_id', 'username')
             ->get();
 
-            $totalObtained = $submissions->sum('marks_obtained');
-
-            // Calculate aggregated marks: (obtained/total_possible_all_works) × subject_max_marks
-            $aggregatedMarks = $totalPossibleMarks > 0 
-                ? ($totalObtained / $totalPossibleMarks) * $subject->final_max_marks 
-                : 0;
-            
-            $percentage = $totalPossibleMarks > 0 
-                ? ($totalObtained / $totalPossibleMarks) * 100 
-                : 0;
+        $studentMarks = $students->map(function ($student) use ($obtainedMap, $totalPossibleMarks, $subject) {
+            $totalObtained  = (float) ($obtainedMap[$student->id] ?? 0);
+            $aggregatedMarks = $totalPossibleMarks > 0
+                ? ($totalObtained / $totalPossibleMarks) * $subject->final_max_marks : 0;
+            $percentage      = $totalPossibleMarks > 0
+                ? ($totalObtained / $totalPossibleMarks) * 100 : 0;
 
             return [
-                'student_id' => $student->id,
-                'student_name' => $student->user->name,
-                'username' => $student->username,
-                'total_obtained' => round($totalObtained, 2),
-                'total_possible' => $totalPossibleMarks,
+                'student_id'       => $student->id,
+                'student_name'     => $student->user->name,
+                'username'         => $student->username,
+                'total_obtained'   => round($totalObtained, 2),
+                'total_possible'   => $totalPossibleMarks,
                 'aggregated_marks' => round($aggregatedMarks, 2),
-                'percentage' => round($percentage, 2)
+                'percentage'       => round($percentage, 2),
             ];
         })->sortByDesc('aggregated_marks')->values();
 
         return response()->json([
             'subject' => [
-                'id' => $subject->id,
-                'name' => $subject->name,
-                'code' => $subject->code,
-                'max_marks' => $subject->final_max_marks,
-                'class_id' => $subject->class_id,
-                'class_name' => $subject->classRoom->name,
-                'teacher_name' => $subject->teacher->name
+                'id'           => $subject->id,
+                'name'         => $subject->name,
+                'code'         => $subject->code,
+                'max_marks'    => $subject->final_max_marks,
+                'class_id'     => $subject->class_id,
+                'class_name'   => $subject->classRoom->name,
+                'teacher_name' => $subject->teacher->name,
             ],
-            'total_works' => $totalWorks,
+            'total_works'    => $totalWorks,
             'completed_works' => $completedWorks,
-            'works' => $worksData,
-            'student_marks' => $studentMarks
+            'works'          => $worksData,
+            'student_marks'  => $studentMarks,
         ]);
     }
 }

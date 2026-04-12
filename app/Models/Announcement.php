@@ -71,7 +71,7 @@ class Announcement extends Model
                 $q->where('target_type', 'all')
                   ->orWhere(function ($q2) use ($user) {
                       $q2->where('target_type', 'specific')
-                         ->whereHas('targetUsers', fn ($q3) => $q3->where('user_id', $user->id));
+                         ->whereHas('targetUsers', fn ($q3) => $q3->where('users.id', $user->id));
                   });
             });
     }
@@ -99,7 +99,7 @@ class Announcement extends Model
                   // Specific individual
                   ->orWhere(function ($q2) use ($user) {
                       $q2->where('target_type', 'specific')
-                         ->whereHas('targetUsers', fn ($q3) => $q3->where('user_id', $user->id));
+                         ->whereHas('targetUsers', fn ($q3) => $q3->where('users.id', $user->id));
                   });
             });
     }

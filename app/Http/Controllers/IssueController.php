@@ -44,7 +44,7 @@ class IssueController extends Controller
             $query->where('priority', $request->priority);
         }
 
-        return $query->latest()->get();
+        return $query->latest()->simplePaginate(15);
     }
 
     public function store(Request $request)
@@ -136,15 +136,6 @@ class IssueController extends Controller
         ]);
 
         $user = Auth::user();
-
-        // Authorization: Principal/Manager, Creator, or Responsible User can comment
-        $canComment = in_array($user->role, ['principal', 'manager']) ||
-                      $issue->created_by === $user->id ||
-                      $issue->responsible_user_id === $user->id;
-
-        if (!$canComment) {
-            abort(403, 'You are not authorized to comment on this issue.');
-        }
 
         // Authorization: Principal/Manager, Creator, or Responsible User can comment
         $canComment = in_array($user->role, ['principal', 'manager']) ||

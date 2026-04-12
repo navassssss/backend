@@ -26,138 +26,135 @@ class AttendanceController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'class_id' => 'required|exists:class_rooms,id',
-            'date' => 'required|date',
-            'session' => 'required|in:morning,afternoon',
-            'absent_students' => 'present|array', // Can be empty if everyone present
-            'absent_students.*' => 'exists:students,id'
+            'class_id'        => 'required|exists:class_rooms,id',
+            'date'            => 'required|date',
+            'session'         => 'required|in:morning,afternoon',
+            'absent_students' => 'present|array',
+            'absent_students.*' => 'exists:students,id',
         ]);
 
         DB::transaction(function () use ($validated, $request) {
-            // Create parent attendance record
             $attendance = Attendance::create([
-                'class_id' => $validated['class_id'],
-                'date' => $validated['date'],
-                'session' => $validated['session'],
-                'marked_by' => $request->user()->id
+                'class_id'  => $validated['class_id'],
+                'date'      => $validated['date'],
+                'session'   => $validated['session'],
+                'marked_by' => $request->user()->id,
             ]);
 
-            // Get all students in the class
-            $students = Student::where('class_id', $validated['class_id'])->get();
-            $absentIds = collect($validated['absent_students']);
+            $students  = Student::where('class_id', $validated['class_id'])->pluck('id');
+            $absentSet = collect($validated['absent_students'])->flip(); // O(1) lookup
 
-            foreach ($students as $student) {
-                $status = $absentIds->contains($student->id) ? 'absent' : 'present';
-                
-                AttendanceRecord::create([
-                    'attendance_id' => $attendance->id,
-                    'student_id' => $student->id,
-                    'status' => $status
-                ]);
-            }
+            // Single bulk insert instead of one INSERT per student
+            $rows = $students->map(fn ($sid) => [
+                'attendance_id' => $attendance->id,
+                'student_id'    => $sid,
+                'status'        => $absentSet->has($sid) ? 'absent' : 'present',
+                'created_at'    => now(),
+                'updated_at'    => now(),
+            ])->all();
+
+            AttendanceRecord::insert($rows);
         });
 
         return response()->json(['message' => 'Attendance submitted successfully']);
     }
 
-    // List recent attendance (for list view)
+    // List attendance for a given date
     public function index(Request $request)
     {
         $date = $request->query('date', date('Y-m-d'));
 
-        $records = Attendance::with(['classRoom', 'marker', 'records.student.user'])
-            ->where('date', $date)
-            ->get()
-            ->map(function ($att) {
-                $present = $att->records()->where('status', 'present')->count();
-                $absent = $att->records()->where('status', 'absent')->count();
-                
-                // Get absent students with their details
-                $absentStudents = $att->records()
-                    ->where('status', 'absent')
-                    ->with('student.user')
-                    ->get()
-                    ->map(function($record) {
-                        return [
-                            'id' => $record->student->id,
-                            'name' => $record->student->user->name ?? 'Unknown',
-                            'roll_number' => $record->student->roll_number
-                        ];
-                    });
+        // Load everything with eager loading — no extra queries inside map()
+        $attendances = Attendance::with([
+            'classRoom:id,name',
+            'marker:id,name',
+            'records:id,attendance_id,student_id,status',
+            'records.student:id,user_id,roll_number',
+            'records.student.user:id,name',
+        ])->where('date', $date)->get();
 
-                return [
-                    'id' => $att->id,
-                    'className' => $att->classRoom->name,
-                    'classId' => $att->classRoom->id,
-                    'session' => $att->session,
-                    'teacherName' => $att->marker->name,
-                    'presentCount' => $present,
-                    'absentCount' => $absent,
-                    'absentStudents' => $absentStudents,
-                    'date' => $att->date,
-                    'submittedAt' => $att->created_at->toIso8601String()
-                ];
-            });
+        $records = $attendances->map(function (Attendance $att) {
+            // Use already-loaded collection — zero extra queries
+            $recordCollection = $att->records;
 
-        // Calculate unique student counts across all sessions for today
-        $allRecords = AttendanceRecord::whereHas('attendance', function($q) use ($date) {
-            $q->where('date', $date);
-        })->with(['student', 'attendance'])->get();
-        
-        // Separate morning and afternoon records
-        $morningRecords = $allRecords->filter(fn($r) => $r->attendance->session === 'morning');
-        $afternoonRecords = $allRecords->filter(fn($r) => $r->attendance->session === 'afternoon');
-        
-        // Count present students for each session
-        $morningPresent = $morningRecords->where('status', 'present')->count();
-        $morningAbsent = $morningRecords->where('status', 'absent')->count();
-        $afternoonPresent = $afternoonRecords->where('status', 'present')->count();
-        $afternoonAbsent = $afternoonRecords->where('status', 'absent')->count();
+            $present = $recordCollection->where('status', 'present')->count();
+            $absent  = $recordCollection->where('status', 'absent')->count();
+
+            $absentStudents = $recordCollection
+                ->where('status', 'absent')
+                ->map(fn ($r) => [
+                    'id'          => $r->student?->id,
+                    'name'        => $r->student?->user?->name ?? 'Unknown',
+                    'roll_number' => $r->student?->roll_number,
+                ]);
+
+            return [
+                'id'             => $att->id,
+                'className'      => $att->classRoom?->name,
+                'classId'        => $att->classRoom?->id,
+                'session'        => $att->session,
+                'teacherName'    => $att->marker?->name,
+                'presentCount'   => $present,
+                'absentCount'    => $absent,
+                'absentStudents' => $absentStudents,
+                'date'           => $att->date,
+                'submittedAt'    => $att->created_at->toIso8601String(),
+            ];
+        });
+
+        // Day-level stats from already-loaded data — no extra DB query
+        $allRecords       = $attendances->flatMap(fn ($a) => $a->records);
+        $morningRecords   = $allRecords->filter(fn ($r) => $r->attendance?->session === 'morning');
+        $afternoonRecords = $allRecords->filter(fn ($r) => $r->attendance?->session === 'afternoon');
 
         return response()->json([
-            'records' => $records,
+            'records'    => $records,
             'todayStats' => [
-                'morningPresent' => $morningPresent,
-                'morningAbsent' => $morningAbsent,
-                'afternoonPresent' => $afternoonPresent,
-                'afternoonAbsent' => $afternoonAbsent
-            ]
+                'morningPresent'   => $morningRecords->where('status', 'present')->count(),
+                'morningAbsent'    => $morningRecords->where('status', 'absent')->count(),
+                'afternoonPresent' => $afternoonRecords->where('status', 'present')->count(),
+                'afternoonAbsent'  => $afternoonRecords->where('status', 'absent')->count(),
+            ],
         ]);
     }
 
     // Get specific attendance details
     public function show($id)
     {
-        $attendance = Attendance::with(['classRoom', 'marker', 'records.student'])->findOrFail($id);
-        
+        $attendance = Attendance::with([
+            'classRoom:id,name',
+            'marker:id,name',
+            'records:id,attendance_id,student_id,status',
+            'records.student:id,user_id,roll_number,name',
+        ])->findOrFail($id);
+
         return response()->json([
-            'id' => $attendance->id,
-            'className' => $attendance->classRoom->name,
-            'session' => $attendance->session,
-            'date' => $attendance->date,
-            'teacherName' => $attendance->marker->name,
-            'records' => $attendance->records->map(function ($r) {
-                return [
-                    'studentId' => $r->student_id,
-                    'studentName' => $r->student->name,
-                    'rollNumber' => $r->student->roll_number,
-                    'status' => $r->status
-                ];
-            })
+            'id'          => $attendance->id,
+            'className'   => $attendance->classRoom?->name,
+            'session'     => $attendance->session,
+            'date'        => $attendance->date,
+            'teacherName' => $attendance->marker?->name,
+            'records'     => $attendance->records->map(fn ($r) => [
+                'studentId'   => $r->student_id,
+                'studentName' => $r->student?->name ?? $r->student?->user?->name,
+                'rollNumber'  => $r->student?->roll_number,
+                'status'      => $r->status,
+            ]),
         ]);
     }
-    
 
-    // Get all classes for dropdown
+    // Get all classes for dropdown — withCount replaces per-class count() query
     public function classes()
     {
-        $classes = ClassRoom::select('id', 'name')->get()->map(function($c) {
-            return [
-                'id' => $c->id,
-                'name' => $c->name,
-                'studentCount' => $c->students()->count()
-            ];
-        });
+        $classes = ClassRoom::select('id', 'name')
+            ->withCount('students')
+            ->get()
+            ->map(fn ($c) => [
+                'id'           => $c->id,
+                'name'         => $c->name,
+                'studentCount' => $c->students_count,
+            ]);
+
         return response()->json($classes);
     }
 
@@ -168,15 +165,13 @@ class AttendanceController extends Controller
             ->with('user:id,name')
             ->orderByRaw('CAST(roll_number AS UNSIGNED) ASC')
             ->get()
-            ->map(function($student) {
-                return [
-                    'id' => $student->id,
-                    'name' => $student->user->name ?? 'Unknown',
-                    'roll_number' => $student->roll_number,
-                    'photo' => $student->photo
-                ];
-            });
-            
+            ->map(fn ($s) => [
+                'id'          => $s->id,
+                'name'        => $s->user?->name ?? 'Unknown',
+                'roll_number' => $s->roll_number,
+                'photo'       => $s->photo,
+            ]);
+
         return response()->json($students);
     }
 }
