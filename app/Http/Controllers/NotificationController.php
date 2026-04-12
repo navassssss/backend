@@ -7,15 +7,14 @@ use Illuminate\Support\Facades\Auth;
 
 class NotificationController extends Controller
 {
+    public function __construct(
+        private readonly \App\Services\NotificationService $notificationService
+    ) {}
+
     public function index()
     {
         $user = Auth::user();
-
-        return $user->notifications->map(function ($notification) {
-            $notification->created_at_human = \Illuminate\Support\Carbon::parse($notification->created_at)->inUserTimezone()->diffForHumans();
-            $notification->created_at_formatted = \Illuminate\Support\Carbon::parse($notification->created_at)->inUserTimezone()->format('M d, Y h:i A');
-            return $notification;
-        });
+        return response()->json($this->notificationService->getUserNotifications($user));
     }
 
     public function markAsRead($id)
@@ -24,6 +23,8 @@ class NotificationController extends Controller
         $notification = $user->notifications()->where('id', $id)->firstOrFail();
         $notification->markAsRead();
 
+        $this->notificationService->invalidateUserCache($user->id);
+
         return response()->json(['message' => 'Marked as read']);
     }
 
@@ -31,6 +32,8 @@ class NotificationController extends Controller
     {
         $user = Auth::user();
         $user->unreadNotifications->markAsRead();
+
+        $this->notificationService->invalidateUserCache($user->id);
 
         return response()->json(['message' => 'All marked as read']);
     }

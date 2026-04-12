@@ -90,7 +90,70 @@ class FeeManagementService
     }
 
     /**
-     * Get unpaid months for a student (oldest first)
+     * Batch fetch monthly status for multiple students in ONE SQL query.
+     * Returns a map keyed by student_id:
+     *   [student_id => ['paid' => X, 'expected' => Y, 'pending' => Z, 'status' => 'paid|due|overpaid']]
+     *
+     * This replaces the N+1 per-student getStudentMonthlyStatus() loop pattern.
+     */
+    public function batchGetStudentSummary(array $studentIds, ?int $limitYear = null, ?int $limitMonth = null): array
+    {
+        if (empty($studentIds)) return [];
+
+        $limitYear  = $limitYear  ?? now()->addMonth()->year;
+        $limitMonth = $limitMonth ?? now()->addMonth()->month;
+
+        // Single query: total expected per student up to limit date
+        $expectedRaw = DB::table('monthly_fee_plans')
+            ->select('student_id', DB::raw('SUM(payable_amount) as total_expected'))
+            ->whereIn('student_id', $studentIds)
+            ->where(function ($q) use ($limitYear, $limitMonth) {
+                $q->where('year', '<', $limitYear)
+                  ->orWhere(function ($q2) use ($limitYear, $limitMonth) {
+                      $q2->where('year', $limitYear)->where('month', '<=', $limitMonth);
+                  });
+            })
+            ->groupBy('student_id')
+            ->pluck('total_expected', 'student_id');
+
+        // Single query: total paid per student (all time)
+        $paidRaw = DB::table('fee_payment_allocations')
+            ->select('student_id', DB::raw('SUM(allocated_amount) as total_paid'))
+            ->whereIn('student_id', $studentIds)
+            ->groupBy('student_id')
+            ->pluck('total_paid', 'student_id');
+
+        // Last payment per student (one query with MAX)
+        $lastPayments = DB::table('fee_payments')
+            ->select('student_id', DB::raw('MAX(payment_date) as last_payment_date'))
+            ->whereIn('student_id', $studentIds)
+            ->groupBy('student_id')
+            ->pluck('last_payment_date', 'student_id');
+
+        $result = [];
+        foreach ($studentIds as $sid) {
+            $expected = (float) ($expectedRaw[$sid] ?? 0);
+            $paid     = (float) ($paidRaw[$sid] ?? 0);
+            $pending  = $expected - $paid;
+
+            $status = 'paid';
+            if ($pending > 0)  $status = 'due';
+            elseif ($pending < 0) $status = 'overpaid';
+
+            $result[$sid] = [
+                'total_expected'    => $expected,
+                'total_paid'        => $paid,
+                'total_pending'     => $pending,
+                'status'            => $status,
+                'last_payment_date' => $lastPayments[$sid] ?? null,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get unpaid months for a student (oldest first) — optimized with one preloaded allocation map.
      */
     private function getUnpaidMonths(int $studentId): array
     {
@@ -98,29 +161,33 @@ class FeeManagementService
             ->orderBy('year')
             ->orderBy('month')
             ->get();
-        
+
+        // Preload all allocations for this student in one query
+        $paidMap = DB::table('fee_payment_allocations')
+            ->where('student_id', $studentId)
+            ->select('year', 'month', DB::raw('SUM(allocated_amount) as paid'))
+            ->groupBy('year', 'month')
+            ->get()
+            ->keyBy(fn($r) => "{$r->year}-{$r->month}");
+
         $unpaidMonths = [];
-        
+
         foreach ($plans as $plan) {
-            // Calculate paid amount for this month
-            $paidAmount = FeePaymentAllocation::where('student_id', $studentId)
-                ->where('year', $plan->year)
-                ->where('month', $plan->month)
-                ->sum('allocated_amount');
-            
-            $balance = $plan->payable_amount - $paidAmount;
-            
+            $key       = "{$plan->year}-{$plan->month}";
+            $paidAmount = (float) ($paidMap[$key]->paid ?? 0);
+            $balance    = $plan->payable_amount - $paidAmount;
+
             if ($balance > 0) {
                 $unpaidMonths[] = [
-                    'year' => $plan->year,
-                    'month' => $plan->month,
+                    'year'     => $plan->year,
+                    'month'    => $plan->month,
                     'expected' => $plan->payable_amount,
-                    'paid' => $paidAmount,
-                    'balance' => $balance,
+                    'paid'     => $paidAmount,
+                    'balance'  => $balance,
                 ];
             }
         }
-        
+
         return $unpaidMonths;
     }
 

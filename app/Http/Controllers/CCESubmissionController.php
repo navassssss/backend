@@ -130,103 +130,102 @@ class CCESubmissionController extends Controller
         ]);
     }
 
-    // Principal endpoint - Student marks overview
+    // Principal endpoint - Student marks overview (SQL aggregation, no N+1)
     public function studentMarks(Request $request)
     {
-        $classId = $request->query('class_id');
+        $classId   = $request->query('class_id');
         $studentId = $request->query('student_id');
-        $search = $request->query('search');
-        $page = $request->query('page', 1);
-        $perPage = $request->query('per_page', 10);
-        
-        $query = Student::with(['user', 'classRoom']);
-        
-        if ($classId) {
-            $query->where('class_id', $classId);
-        }
-        
-        if ($studentId) {
-            $query->where('id', $studentId);
-        }
-        
-        // Add search functionality
+        $search    = $request->query('search');
+        $page      = (int) $request->query('page', 1);
+        $perPage   = (int) $request->query('per_page', 10);
+
+        $query = Student::with(['user:id,name', 'classRoom:id,name'])
+            ->select('students.id', 'students.user_id', 'students.class_id', 'students.roll_number', 'students.username');
+
+        if ($classId)   $query->where('class_id', $classId);
+        if ($studentId) $query->where('id', $studentId);
+
         if ($search) {
-            $query->where(function($q) use ($search) {
-                // Search in user name
-                $q->whereHas('user', function($userQuery) use ($search) {
-                    $userQuery->where('name', 'like', '%' . $search . '%');
-                })
-                // OR search in student roll number
-                ->orWhere('roll_number', 'like', '%' . $search . '%');
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('user', fn($uq) => $uq->where('name', 'like', "%{$search}%"))
+                  ->orWhere('roll_number', 'like', "%{$search}%");
             });
         }
-        
-        $students = $query->get()->map(function($student) {
-            $submissions = CCESubmission::where('student_id', $student->id)
-                ->where('status', 'evaluated')
-                ->with('work.subject')
-                ->get();
-            
-            $subjectMarks = $submissions->groupBy(function($sub) {
-                return $sub->work->subject_id;
-            })->map(function($subs, $subjectId) {
-                $subject = $subs->first()->work->subject;
-                $obtained = $subs->sum('marks_obtained');
-                $total = $subs->sum(function($sub) {
-                    return $sub->work->max_marks;
-                });
-                
-                return [
-                    'subjectName' => $subject->name,
-                    'obtained' => $obtained,
-                    'total' => $total,
-                    'percentage' => $total > 0 ? round(($obtained / $total) * 100, 2) : 0
+
+        $studentIds = $query->pluck('students.id');
+
+        if ($studentIds->isEmpty()) {
+            return response()->json(['data' => [], 'total' => 0, 'current_page' => $page, 'per_page' => $perPage, 'last_page' => 1, 'stats' => ['total_students' => 0, 'total_subjects' => 0, 'average_percentage' => 0]]);
+        }
+
+        // Single aggregation query — replaces N per-student DB calls
+        $aggregates = DB::table('cce_submissions as s')
+            ->join('cce_works as w', 's.work_id', '=', 'w.id')
+            ->join('subjects as sub', 'w.subject_id', '=', 'sub.id')
+            ->select(
+                's.student_id',
+                'sub.id as subject_id',
+                'sub.name as subject_name',
+                'sub.final_max_marks',
+                DB::raw('SUM(s.marks_obtained) as obtained'),
+                DB::raw('SUM(w.max_marks) as raw_max')
+            )
+            ->whereIn('s.student_id', $studentIds)
+            ->where('s.status', 'evaluated')
+            ->whereNotNull('s.marks_obtained')
+            ->groupBy('s.student_id', 'sub.id', 'sub.name', 'sub.final_max_marks')
+            ->get()
+            ->groupBy('student_id');
+
+        $students = $query->get()->keyBy('id');
+
+        $allStudentMarks = $studentIds->map(function ($sid) use ($students, $aggregates) {
+            $student     = $students[$sid];
+            $subjectRows = $aggregates->get($sid, collect());
+
+            $subjectMarks  = [];
+            $totalObtained = 0;
+            $totalMarks    = 0;
+
+            foreach ($subjectRows as $row) {
+                $subjectMarks[$row->subject_name] = [
+                    'subjectName' => $row->subject_name,
+                    'obtained'    => round((float) $row->obtained, 2),
+                    'total'       => (float) ($row->final_max_marks ?? $row->raw_max),
+                    'percentage'  => $row->raw_max > 0
+                        ? round(($row->obtained / $row->raw_max) * 100, 2) : 0,
                 ];
-            });
-            
-            $totalObtained = $submissions->sum('marks_obtained');
-            $totalMarks = $submissions->sum(function($sub) {
-                return $sub->work->max_marks;
-            });
-            
-            return [
-                'studentId' => $student->id,
-                'studentName' => $student->user->name ?? 'Unknown',
-                'rollNumber' => $student->roll_number,
-                'className' => $student->classRoom->name,
-                'subjectMarks' => $subjectMarks,
-                'totalObtained' => $totalObtained,
-                'totalMarks' => $totalMarks,
-                'overallPercentage' => $totalMarks > 0 ? round(($totalObtained / $totalMarks) * 100, 2) : 0
-            ];
-        });
-        
-        // Calculate stats from all filtered results
-        $allSubjects = [];
-        $totalPercentageSum = 0;
-        foreach ($students as $student) {
-            foreach ($student['subjectMarks'] as $subjectName => $marks) {
-                $allSubjects[$subjectName] = true;
+                $totalObtained += $row->obtained;
+                $totalMarks    += $row->final_max_marks ?? $row->raw_max;
             }
-            $totalPercentageSum += $student['overallPercentage'];
-        }
-        
-        // Paginate the results
-        $total = $students->count();
-        $lastPage = ceil($total / $perPage);
-        $paginatedStudents = $students->slice(($page - 1) * $perPage, $perPage)->values();
-        
+
+            return [
+                'studentId'         => $student->id,
+                'studentName'       => $student->user->name ?? 'Unknown',
+                'rollNumber'        => $student->roll_number,
+                'className'         => $student->classRoom->name ?? 'N/A',
+                'subjectMarks'      => $subjectMarks,
+                'totalObtained'     => round($totalObtained, 2),
+                'totalMarks'        => $totalMarks,
+                'overallPercentage' => $totalMarks > 0 ? round(($totalObtained / $totalMarks) * 100, 2) : 0,
+            ];
+        })->values();
+
+        $total          = $allStudentMarks->count();
+        $paginatedData  = $allStudentMarks->slice(($page - 1) * $perPage, $perPage)->values();
+        $allSubjectNames = collect($aggregates->flatten(1))->pluck('subject_name')->unique()->count();
+
         return response()->json([
-            'data' => $paginatedStudents,
-            'current_page' => (int)$page,
-            'last_page' => (int)$lastPage,
-            'per_page' => (int)$perPage,
-            'total' => $total,
-            'stats' => [
-                'total_students' => $total,
-                'total_subjects' => count($allSubjects),
-                'average_percentage' => $total > 0 ? round($totalPercentageSum / $total, 2) : 0
-            ]
+            'data'         => $paginatedData,
+            'current_page' => $page,
+            'last_page'    => max(1, (int) ceil($total / $perPage)),
+            'per_page'     => $perPage,
+            'total'        => $total,
+            'stats'        => [
+                'total_students'     => $total,
+                'total_subjects'     => $allSubjectNames,
+                'average_percentage' => $total > 0 ? round($allStudentMarks->avg('overallPercentage'), 2) : 0,
+            ],
         ]);
     }
 }

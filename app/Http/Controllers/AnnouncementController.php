@@ -45,8 +45,8 @@ class AnnouncementController extends Controller
 
         return $query->orderByDesc('is_pinned')
                      ->orderByDesc('created_at')
-                     ->get()
-                     ->map(fn (Announcement $a) => $this->formatAnnouncement($a, $user));
+                     ->paginate((int) $request->query('per_page', 20))
+                     ->through(fn (Announcement $a) => $this->formatAnnouncement($a, $user));
     }
 
     /**

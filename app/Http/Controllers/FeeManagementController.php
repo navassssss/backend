@@ -44,166 +44,86 @@ class FeeManagementController extends Controller
             });
         }
 
-        // OPTIMIZATION: Get paginated students FIRST, then calculate status only for visible students
+        // OPTIMIZATION: Paginate first, then batch-calculate status for only the visible page
         $paginatedStudents = $query->paginate($perPage, ['*'], 'page', $page);
-        
-        // Calculate status for ONLY the current page students
-        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) {
-            $status = $this->feeService->getStudentMonthlyStatus($student->id);
-            
-            // Filter to only include months up to NEXT month for expected amount
-            $limitDate = now()->addMonth(); // Show next month also
-            $limitYear = $limitDate->year;
-            $limitMonth = $limitDate->month;
+        $studentIds = collect($paginatedStudents->items())->pluck('id')->toArray();
 
-            $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-                if ($month['year'] < $limitYear) {
-                    return true;
-                } elseif ($month['year'] == $limitYear) {
-                    return $month['month'] <= $limitMonth;
-                }
-                return false;
-            });
-            
-            // Calculate expected and paid for past/current months
-            $totalExpected = $statusUpToCurrent->sum('payable');
-            
-            // Get ALL payments including future months
-            $allStatus = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-                // Include past/next months
-                if ($month['year'] < $limitYear || ($month['year'] == $limitYear && $month['month'] <= $limitMonth)) {
-                    return true;
-                }
-                // Include future months only if they have payments
-                if ($month['paid'] > 0) {
-                    return true;
-                }
-                return false;
-            });
-            $totalPaid = $allStatus->sum('paid');
-            
-            // Pending is expected minus paid (can be negative if overpaid)
-            $totalPending = $totalExpected - $totalPaid;
-            
-            // Determine status
-            $overallStatus = 'paid';
-            if ($totalPending > 0) {
-                $overallStatus = 'due';
-            } elseif ($totalPending < 0) {
-                $overallStatus = 'overpaid';
-            }
-            
-            $lastPayment = FeePayment::where('student_id', $student->id)
-                ->latest('payment_date')
-                ->first();
+        // 3 SQL queries total for the entire page (regardless of page size)
+        $statusMap = $this->feeService->batchGetStudentSummary($studentIds);
 
+        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) use ($statusMap) {
+            $s = $statusMap[$student->id] ?? ['total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0, 'status' => 'paid', 'last_payment_date' => null];
             return [
-                'id' => $student->id,
-                'name' => $student->user->name,
-                'username' => $student->username,
-                'class_id' => $student->class_id,
-                'class_name' => $student->class->name,
-                'total_pending' => $totalPending,
-                'total_paid' => $totalPaid,
-                'last_payment_date' => $lastPayment?->payment_date,
-                'status' => $overallStatus,
+                'id'                => $student->id,
+                'name'              => $student->user->name,
+                'username'          => $student->username,
+                'class_id'          => $student->class_id,
+                'class_name'        => $student->class->name ?? '-',
+                'total_pending'     => $s['total_pending'],
+                'total_paid'        => $s['total_paid'],
+                'last_payment_date' => $s['last_payment_date'],
+                'status'            => $s['status'],
             ];
         });
-        
-        // Apply status filter if needed
+
+        // Apply status filter after batch (only affects in-memory page results)
         if ($statusFilter !== 'all') {
-            $studentsWithStatus = $studentsWithStatus->filter(function ($student) use ($statusFilter) {
-                return $student['status'] === $statusFilter;
-            })->values();
+            $studentsWithStatus = $studentsWithStatus->filter(fn($s) => $s['status'] === $statusFilter)->values();
         }
 
         return response()->json([
-            'data' => $studentsWithStatus->values()->all(),
+            'data'         => $studentsWithStatus->values()->all(),
             'current_page' => $paginatedStudents->currentPage(),
-            'per_page' => $perPage,
-            'total' => $paginatedStudents->total(),
-            'last_page' => $paginatedStudents->lastPage(),
+            'per_page'     => $perPage,
+            'total'        => $paginatedStudents->total(),
+            'last_page'    => $paginatedStudents->lastPage(),
         ]);
     }
 
     /**
-     * Get status counts for all students (cached for performance)
+     * Get status counts for all students — single SQL aggregation, no N+1.
      */
     public function getStatusCounts(Request $request)
     {
-        $search = $request->input('search', '');
+        $search  = $request->input('search', '');
         $classId = $request->input('class_id');
-        
-        // Create cache key based on filters
-        $cacheKey = 'fee_status_counts_' . md5($search . '_' . $classId);
-        
-        // Cache for 5 minutes
-        return \Cache::remember($cacheKey, 300, function () use ($request, $search, $classId) {
-            $countQuery = Student::with(['user', 'class']);
-            
-            if ($classId) {
-                $countQuery->where('class_id', $classId);
-            }
-            
-            if (!empty($search)) {
-                $countQuery->where(function($q) use ($search) {
-                    $q->where('username', 'like', "%{$search}%")
-                      ->orWhereHas('user', function($userQuery) use ($search) {
-                          $userQuery->where('name', 'like', "%{$search}%");
-                      });
-                });
-            }
-            
-            $allStudentsForCount = $countQuery->get();
-            $paidCount = 0;
-            $partialCount = 0;
-            $dueCount = 0;
-            $overpaidCount = 0;
-            
-            foreach ($allStudentsForCount as $student) {
-                $status = $this->feeService->getStudentMonthlyStatus($student->id);
-                
-                $limitDate = now()->addMonth(); 
-                $limitYear = $limitDate->year;
-                $limitMonth = $limitDate->month;
 
-                $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-                    if ($month['year'] < $limitYear) {
-                        return true;
-                    } elseif ($month['year'] == $limitYear) {
-                        return $month['month'] <= $limitMonth;
-                    }
-                    return false;
+        $cacheKey = 'fee_status_counts_' . md5($search . '_' . $classId);
+
+        // Cache for 5 minutes — safe, counts not financial data
+        return \Cache::remember($cacheKey, 300, function () use ($search, $classId) {
+            // Step 1: get matching student IDs (one query)
+            $query = Student::select('students.id');
+            if ($classId) $query->where('class_id', $classId);
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('username', 'like', "%{$search}%")
+                      ->orWhereHas('user', fn($uq) => $uq->where('name', 'like', "%{$search}%"));
                 });
-                
-                $totalExpected = $statusUpToCurrent->sum('payable');
-                
-                $allStatus = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-                    if ($month['year'] < $limitYear || ($month['year'] == $limitYear && $month['month'] <= $limitMonth)) {
-                        return true;
-                    }
-                    if ($month['paid'] > 0) {
-                        return true;
-                    }
-                    return false;
-                });
-                $totalPaid = $allStatus->sum('paid');
-                
-                $totalPending = $totalExpected - $totalPaid;
-                
-                if ($totalPending < 0) {
-                    $overpaidCount++;
-                } elseif ($totalPending == 0) {
-                    $paidCount++;
-                } else {
-                    $dueCount++;
-                }
+            }
+            $studentIds = $query->pluck('id')->toArray();
+
+            if (empty($studentIds)) {
+                return response()->json(['paid' => 0, 'partial' => 0, 'due' => 0, 'overpaid' => 0]);
+            }
+
+            // Step 2: single batch summary (3 queries total)
+            $summaries = $this->feeService->batchGetStudentSummary($studentIds);
+
+            $paidCount     = 0;
+            $dueCount      = 0;
+            $overpaidCount = 0;
+
+            foreach ($summaries as $s) {
+                if ($s['status'] === 'overpaid')   $overpaidCount++;
+                elseif ($s['status'] === 'paid')   $paidCount++;
+                else                               $dueCount++;
             }
 
             return response()->json([
-                'paid' => $paidCount,
-                'partial' => $partialCount,
-                'due' => $dueCount,
+                'paid'     => $paidCount,
+                'partial'  => 0, // not tracked in batch summary
+                'due'      => $dueCount,
                 'overpaid' => $overpaidCount,
             ]);
         });
@@ -439,63 +359,51 @@ class FeeManagementController extends Controller
     }
 
     /**
-     * Get class-wise report
+     * Get class-wise report — batch SQL aggregation, no per-student loop.
      */
     public function getClassReport($classId)
     {
-        $class = ClassRoom::findOrFail($classId);
+        $class    = ClassRoom::findOrFail($classId);
         $students = Student::where('class_id', $classId)
-            ->with('user')
+            ->with('user:id,name')
+            ->select('id', 'user_id')
             ->get();
 
-        $report = $students->map(function ($student) {
-            $status = $this->feeService->getStudentMonthlyStatus($student->id);
-            
-            // Filter to only include months up to NEXT month
-            $limitDate = now()->addMonth();
-            $limitYear = $limitDate->year;
-            $limitMonth = $limitDate->month;
+        $studentIds = $students->pluck('id')->toArray();
 
-            $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-                if ($month['year'] < $limitYear) {
-                    return true; // Include all months from previous years
-                } elseif ($month['year'] == $limitYear) {
-                    return $month['month'] <= $limitMonth; // Include only up to next month
-                }
-                return false; // Exclude future months
-            });
-            
-            $totalExpected = $statusUpToCurrent->sum('payable');
-            $totalPaid = $statusUpToCurrent->sum('paid');
-            
-            // Get the most common monthly payable amount (mode)
-            // This avoids skewing by one-time payments for zero-fee students
-            $payableAmounts = collect($status)->pluck('payable');
-            $monthlyPayable = 0;
-            
-            if ($payableAmounts->isNotEmpty()) {
-                // Count frequency of each amount
-                $frequencies = $payableAmounts->countBy();
-                // Get the most frequent amount
-                $monthlyPayable = $frequencies->sortDesc()->keys()->first() ?? 0;
-            }
+        // 3 queries total via batch — regardless of class size
+        $summaries = $this->feeService->batchGetStudentSummary($studentIds);
 
+        // Modal fee per student: most common payable_amount across their plans
+        $modalFees = \DB::table('monthly_fee_plans')
+            ->select('student_id', 'payable_amount', \DB::raw('COUNT(*) as freq'))
+            ->whereIn('student_id', $studentIds)
+            ->groupBy('student_id', 'payable_amount')
+            ->orderByDesc('freq')
+            ->get()
+            ->groupBy('student_id')
+            ->map(fn($rows) => (float) $rows->first()->payable_amount);
+
+        $report = $students->map(function ($student) use ($summaries, $modalFees) {
+            $s = $summaries[$student->id] ?? [
+                'total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0,
+            ];
             return [
-                'student_id' => $student->id,
-                'student_name' => $student->user->name,
-                'monthly_payable' => $monthlyPayable,
-                'total_expected' => $totalExpected,
-                'total_paid' => $totalPaid,
-                'total_pending' => $totalExpected - $totalPaid,
+                'student_id'      => $student->id,
+                'student_name'    => $student->user->name,
+                'monthly_payable' => $modalFees[$student->id] ?? 0,
+                'total_expected'  => $s['total_expected'],
+                'total_paid'      => $s['total_paid'],
+                'total_pending'   => $s['total_pending'],
             ];
         });
 
         return response()->json([
-            'class_id' => $class->id,
-            'class_name' => $class->name,
-            'students' => $report,
+            'class_id'      => $class->id,
+            'class_name'    => $class->name,
+            'students'      => $report,
             'total_expected' => $report->sum('total_expected'),
-            'total_paid' => $report->sum('total_paid'),
+            'total_paid'    => $report->sum('total_paid'),
             'total_pending' => $report->sum('total_pending'),
         ]);
     }

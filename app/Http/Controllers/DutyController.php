@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 
 class DutyController extends Controller
 {
-    public function __construct(private readonly WebPushService $push) {}
+
 
     public function index()
     {
@@ -41,25 +41,21 @@ class DutyController extends Controller
             foreach ($teacherIds as $teacherId) {
                 $pivotData[$teacherId] = [
                     'assigned_by' => $request->user()->id,
-                    'start_date' => now()->toDateString(),
+                    'start_date'  => now()->toDateString(),
                 ];
             }
             $duty->teachers()->attach($pivotData);
 
-            // Notify teachers
-            foreach ($teacherIds as $tid) {
-                $teacher = \App\Models\User::find($tid);
-                if ($teacher) {
-                    $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
-
-                    // Real Browser Push Notification
-                    $this->push->sendToUser($tid, [
-                        'title' => 'New Duty Assigned',
-                        'body'  => $request->user()->name . " assigned you a duty: " . $duty->name,
-                        'url'   => "/duties/" . $duty->id,
-                        'tag'   => "duty-assigned-" . $duty->id
-                    ]);
-                }
+            // Batch-load teachers in one query
+            $teachers = \App\Models\User::whereIn('id', $teacherIds)->get();
+            foreach ($teachers as $teacher) {
+                $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
+                \App\Jobs\SendPushNotificationJob::dispatch($teacher->id, [
+                    'title' => 'New Duty Assigned',
+                    'body'  => $request->user()->name . ' assigned you a duty: ' . $duty->name,
+                    'url'   => '/duties/' . $duty->id,
+                    'tag'   => 'duty-assigned-' . $duty->id,
+                ]);
             }
         }
 
@@ -113,20 +109,16 @@ class DutyController extends Controller
 
         $duty->teachers()->syncWithoutDetaching($syncData);
 
-        // Notify teachers
-        foreach ($validated['teacher_ids'] as $tid) {
-            $teacher = \App\Models\User::find($tid);
-            if ($teacher) {
-                $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
-
-                // Real Browser Push Notification
-                $this->push->sendToUser($tid, [
-                    'title' => 'New Duty Assigned',
-                    'body'  => $request->user()->name . " added you to the duty group: " . $duty->name,
-                    'url'   => "/duties/" . $duty->id,
-                    'tag'   => "duty-assigned-" . $duty->id
-                ]);
-            }
+        // Batch-load and notify all teachers in one query
+        $teachers = \App\Models\User::whereIn('id', $validated['teacher_ids'])->get();
+        foreach ($teachers as $teacher) {
+            $teacher->notify(new \App\Notifications\DutyAssigned($duty, $request->user()));
+            \App\Jobs\SendPushNotificationJob::dispatch($teacher->id, [
+                'title' => 'New Duty Assigned',
+                'body'  => $request->user()->name . ' added you to the duty group: ' . $duty->name,
+                'url'   => '/duties/' . $duty->id,
+                'tag'   => 'duty-assigned-' . $duty->id,
+            ]);
         }
 
         return $duty->load('teachers:id,name,email,role,department');

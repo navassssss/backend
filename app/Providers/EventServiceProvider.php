@@ -16,6 +16,9 @@ class EventServiceProvider extends ServiceProvider
     protected $listen = [
         // Laravel auto-discovers listeners based on handle() method type hints
         // No manual registration needed for AchievementApproved
+        \Illuminate\Notifications\Events\NotificationSent::class => [
+            \App\Listeners\InvalidateNotificationCache::class,
+        ],
     ];
 
     /**

@@ -118,34 +118,40 @@ class ClassRoomController extends Controller
             ];
         }
 
-        // Calculate today's attendance
-        $presentToday = 0;
+        $studentIds = $students->pluck('id');
+
+        // Precalculate today's present records per student
+        $todayPresentMap = DB::table('attendance_records')
+            ->join('attendances', 'attendance_records.attendance_id', '=', 'attendances.id')
+            ->whereIn('attendance_records.student_id', $studentIds)
+            ->where('attendances.date', $today)
+            ->where('attendance_records.status', 'present')
+            ->pluck('attendance_records.student_id')
+            ->toArray();
+
+        $presentToday = count($todayPresentMap);
+
+        // Precalculate total records and present records per student
+        $totalRecordsMap = DB::table('attendance_records')
+            ->select('student_id', DB::raw('count(*) as total'))
+            ->whereIn('student_id', $studentIds)
+            ->groupBy('student_id')
+            ->pluck('total', 'student_id');
+
+        $presentRecordsMap = DB::table('attendance_records')
+            ->select('student_id', DB::raw('count(*) as present'))
+            ->whereIn('student_id', $studentIds)
+            ->where('status', 'present')
+            ->groupBy('student_id')
+            ->pluck('present', 'student_id');
+
         $totalAttendancePercentage = 0;
 
         foreach ($students as $student) {
-            // Get today's attendance records
-            $todayRecords = DB::table('attendance_records')
-                ->join('attendances', 'attendance_records.attendance_id', '=', 'attendances.id')
-                ->where('attendance_records.student_id', $student->id)
-                ->where('attendances.date', $today)
-                ->where('attendance_records.status', 'present')
-                ->count();
-
-            if ($todayRecords > 0) {
-                $presentToday++;
-            }
-
-            // Calculate overall attendance percentage
-            $totalRecords = DB::table('attendance_records')
-                ->where('student_id', $student->id)
-                ->count();
-
+            $totalRecords = $totalRecordsMap[$student->id] ?? 0;
+            
             if ($totalRecords > 0) {
-                $presentRecords = DB::table('attendance_records')
-                    ->where('student_id', $student->id)
-                    ->where('status', 'present')
-                    ->count();
-
+                $presentRecords = $presentRecordsMap[$student->id] ?? 0;
                 $totalAttendancePercentage += ($presentRecords / $totalRecords) * 100;
             }
         }
@@ -306,56 +312,64 @@ class ClassRoomController extends Controller
     private function getStudentDetails($students)
     {
         $studentDetails = [];
+        $studentIds = $students->pluck('id');
+
+        // Preload stats arrays to prevent massive N+1 queries in the loop
+        $totalRecordsMap = DB::table('attendance_records')
+            ->select('student_id', DB::raw('count(*) as total'))
+            ->whereIn('student_id', $studentIds)
+            ->groupBy('student_id')
+            ->pluck('total', 'student_id');
+
+        $presentRecordsMap = DB::table('attendance_records')
+            ->select('student_id', DB::raw('count(*) as present'))
+            ->whereIn('student_id', $studentIds)
+            ->where('status', 'present')
+            ->groupBy('student_id')
+            ->pluck('present', 'student_id');
+
+        $achievementPointsMap = DB::table('achievements')
+            ->select('student_id', DB::raw('sum(points) as total_points'))
+            ->whereIn('student_id', $studentIds)
+            ->where('status', 'approved')
+            ->groupBy('student_id')
+            ->pluck('total_points', 'student_id');
+
+        $marksDataAll = [];
+        try {
+            $marksDataAll = DB::table('cce_submissions')
+                ->leftJoin('cce_works', 'cce_submissions.work_id', '=', 'cce_works.id')
+                ->whereIn('cce_submissions.student_id', $studentIds)
+                ->where('cce_submissions.status', 'evaluated')
+                ->whereNotNull('cce_submissions.marks_obtained')
+                ->select('cce_submissions.student_id', 'cce_submissions.marks_obtained', 'cce_works.max_marks')
+                ->get()
+                ->groupBy('student_id');
+        } catch (\Exception $e) {}
 
         foreach ($students as $student) {
             try {
-                // Get attendance percentage
-                $totalRecords = DB::table('attendance_records')
-                    ->where('student_id', $student->id)
-                    ->count();
-
+                $totalRecords = $totalRecordsMap[$student->id] ?? 0;
                 $attendancePercentage = 0;
                 if ($totalRecords > 0) {
-                    $presentRecords = DB::table('attendance_records')
-                        ->where('student_id', $student->id)
-                        ->where('status', 'present')
-                        ->count();
+                    $presentRecords = $presentRecordsMap[$student->id] ?? 0;
                     $attendancePercentage = round(($presentRecords / $totalRecords) * 100, 2);
                 }
 
-                // Get average marks as percentage
                 $avgMarks = 0;
-                try {
-                    $marksData = DB::table('cce_submissions')
-                        ->leftJoin('cce_works', 'cce_submissions.work_id', '=', 'cce_works.id')
-                        ->where('cce_submissions.student_id', $student->id)
-                        ->where('cce_submissions.status', 'evaluated') // Only count evaluated submissions
-                        ->whereNotNull('cce_submissions.marks_obtained') // Only count submissions with marks
-                        ->select('cce_submissions.marks_obtained', 'cce_works.max_marks')
-                        ->get();
-                    
-                    if ($marksData->count() > 0) {
-                        $totalMarks = 0;
-                        $totalMaxMarks = 0;
-                        
-                        foreach ($marksData as $mark) {
-                            $totalMarks += $mark->marks_obtained ?? 0;
-                            $totalMaxMarks += $mark->max_marks ?? 0;
-                        }
-                        
-                        if ($totalMaxMarks > 0) {
-                            $avgMarks = ($totalMarks / $totalMaxMarks) * 100;
-                        }
+                if (isset($marksDataAll[$student->id])) {
+                    $totalMarks = 0;
+                    $totalMaxMarks = 0;
+                    foreach ($marksDataAll[$student->id] as $mark) {
+                        $totalMarks += $mark->marks_obtained ?? 0;
+                        $totalMaxMarks += $mark->max_marks ?? 0;
                     }
-                } catch (\Exception $e) {
-                    // Marks table doesn't exist
+                    if ($totalMaxMarks > 0) {
+                        $avgMarks = ($totalMarks / $totalMaxMarks) * 100;
+                    }
                 }
 
-                // Get achievement points
-                $achievementPoints = DB::table('achievements')
-                    ->where('student_id', $student->id)
-                    ->where('status', 'approved')
-                    ->sum('points');
+                $achievementPoints = $achievementPointsMap[$student->id] ?? 0;
 
                 $studentDetails[] = [
                     'id' => $student->id,
@@ -363,10 +377,9 @@ class ClassRoomController extends Controller
                     'roll_number' => $student->roll_number,
                     'attendance_percentage' => $attendancePercentage,
                     'average_marks' => $avgMarks ? round($avgMarks, 2) : 0,
-                    'achievement_points' => $achievementPoints ?? 0,
+                    'achievement_points' => $achievementPoints,
                 ];
             } catch (\Exception $e) {
-                // Skip this student if there's an error
                 continue;
             }
         }
