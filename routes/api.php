@@ -71,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
     /**
      * TASK ROUTES
      */
+    Route::post('/tasks/bulk-delete', [TaskController::class, 'bulkDelete']);
     Route::get('/tasks', [TaskController::class, 'index']); // List tasks
     Route::post('/tasks', [TaskController::class, 'store']); // Create task (Principal)
     Route::get('/tasks/{task}', [TaskController::class, 'show']); // Task details

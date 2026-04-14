@@ -109,5 +109,24 @@ class TaskController extends Controller
         return response()->json(['message' => 'Task completed!']);
     }
 
+    /**
+     * Bulk Delete tasks — Principal Only
+     */
+    public function bulkDelete(Request $request)
+    {
+        if (Auth::user()->role !== 'principal' && Auth::user()->role !== 'manager') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $request->validate([
+            'task_ids' => 'required|array',
+            'task_ids.*' => 'exists:tasks,id',
+        ]);
+
+        Task::whereIn('id', $request->task_ids)->delete();
+
+        return response()->json(['message' => 'Tasks deleted successfully']);
+    }
+
    
 }
