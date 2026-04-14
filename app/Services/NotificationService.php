@@ -15,10 +15,7 @@ class NotificationService
      */
     public function getUserNotifications(User $user)
     {
-        $versionKey = "notifications:user:{$user->id}:version";
-        $version = Cache::get($versionKey, 1);
-        
-        $cacheKey = "notifications:user:{$user->id}:v{$version}";
+        $cacheKey = "notifications:user:{$user->id}";
 
         return Cache::remember($cacheKey, now()->addSeconds(15), function () use ($user) {
             return $user->notifications()
@@ -45,6 +42,13 @@ class NotificationService
      */
     public function invalidateUserCache(int $userId): void
     {
-        Cache::increment("notifications:user:{$userId}:version");
+        Cache::forget("notifications:user:{$userId}");
+        
+        // Cleanup legacy versioning to avoid stale state.
+        $version = Cache::get("notifications:user:{$userId}:version", 1);
+        if ($version) {
+            Cache::forget("notifications:user:{$userId}:v{$version}");
+        }
+        Cache::forget("notifications:user:{$userId}:version");
     }
 }
