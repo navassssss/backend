@@ -9,6 +9,7 @@ use App\Http\Controllers\FeeManagementController;
 use App\Http\Controllers\IssueCategoryController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\LeaderboardController;
+use App\Http\Controllers\MedicalController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StudentAuthController;
@@ -127,6 +128,14 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     // Teacher announcement feed (announcements targeted at the logged-in teacher)
     Route::get('/announcements/feed/teacher', [App\Http\Controllers\AnnouncementController::class, 'teacherFeed']);
     Route::post('/announcements/{announcement}/read', [App\Http\Controllers\AnnouncementController::class, 'teacherMarkRead']);
+
+    // ── Medical Records ──────────────────────────────────────
+    Route::get('/medical/active',                  [MedicalController::class, 'active']);
+    Route::get('/medical/history',                 [MedicalController::class, 'history']);
+    Route::post('/medical',                        [MedicalController::class, 'store']);
+    Route::get('/medical/{medical}',               [MedicalController::class, 'show']);
+    Route::post('/medical/{medical}/recover',      [MedicalController::class, 'recover']);
+    Route::post('/medical/{medical}/sent-home',    [MedicalController::class, 'sentHome']);
 
     /**
      * ATTENDANCE ROUTES
