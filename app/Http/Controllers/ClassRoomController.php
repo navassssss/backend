@@ -64,6 +64,25 @@ class ClassRoomController extends Controller
     }
 
     /**
+     * Remove (unassign) the class teacher from a class
+     */
+    public function removeTeacher($id)
+    {
+        $class = ClassRoom::findOrFail($id);
+        $class->class_teacher_id = null;
+        $class->save();
+
+        return response()->json([
+            'message' => 'Class teacher removed successfully',
+            'class' => [
+                'id' => $class->id,
+                'name' => $class->name,
+                'class_teacher' => null,
+            ]
+        ]);
+    }
+
+    /**
      * Get comprehensive class report
      */
     public function getReport($id)
