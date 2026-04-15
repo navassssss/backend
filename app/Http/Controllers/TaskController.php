@@ -34,24 +34,100 @@ class TaskController extends Controller
     }
 
     /**
-     * Create a scheduled task — Principal Only
+     * Create scheduled task(s) — Principal Only
+     *
+     * Supports two modes:
+     *   1. Duty-based (duty_assignments): auto-generates title per duty as
+     *      "{Duty Name} Report" or "{Duty Name} - {custom_title}" when custom_title given.
+     *   2. Manual (teacher_ids + title): flat list of teachers with a single title.
      */
     public function store(Request $request)
     {
+        // ── Duty-based bulk assignment ──────────────────────────────
+        if ($request->has('duty_assignments')) {
+            $request->validate([
+                'duty_assignments'               => 'required|array|min:1',
+                'duty_assignments.*.duty_id'     => 'required|exists:duties,id',
+                'duty_assignments.*.teacher_ids' => 'required|array',
+                'duty_assignments.*.teacher_ids.*' => 'exists:users,id',
+                'custom_title'                   => 'nullable|string|max:255',
+                'scheduled_date'                 => 'required|date',
+                'scheduled_time'                 => 'nullable|string',
+                'instructions'                   => 'nullable|string',
+            ]);
+
+            // Collect all unique teacher IDs for a single batch query
+            $allTeacherIds = collect($request->duty_assignments)
+                ->flatMap(fn ($a) => $a['teacher_ids'])
+                ->unique()
+                ->values()
+                ->all();
+
+            $teachers  = \App\Models\User::whereIn('id', $allTeacherIds)->get()->keyBy('id');
+            $duties    = \App\Models\Duty::whereIn('id',
+                            collect($request->duty_assignments)->pluck('duty_id')->all()
+                         )->get()->keyBy('id');
+
+            $createdTasks = [];
+
+            foreach ($request->duty_assignments as $assignment) {
+                $duty = $duties->get($assignment['duty_id']);
+                if (! $duty) continue;
+
+                // Title: "Play Report" or "Play - Custom Title"
+                $title = trim($duty->name) . ' Report';
+                if (! empty($request->custom_title)) {
+                    $title = trim($duty->name) . ' - ' . trim($request->custom_title);
+                }
+
+                foreach ($assignment['teacher_ids'] as $teacherId) {
+                    $task = Task::create([
+                        'title'          => $title,
+                        'duty_id'        => $duty->id,
+                        'assigned_to'    => $teacherId,
+                        'scheduled_date' => $request->scheduled_date,
+                        'scheduled_time' => $request->scheduled_time,
+                        'instructions'   => $request->instructions,
+                        'status'         => 'pending',
+                    ]);
+
+                    $assignedUser = $teachers->get($teacherId);
+                    if ($assignedUser) {
+                        $assignedUser->notify(new \App\Notifications\TaskAssigned($task, Auth::user()));
+
+                        \App\Jobs\SendPushNotificationJob::dispatch($teacherId, [
+                            'title' => 'New Task Assigned',
+                            'body'  => Auth::user()->name . ' assigned you: ' . $task->title,
+                            'url'   => '/tasks/' . $task->id,
+                            'tag'   => 'task-assigned-' . $task->id,
+                        ]);
+                    }
+
+                    $createdTasks[] = $task;
+                }
+            }
+
+            return response()->json([
+                'message' => 'Tasks created successfully',
+                'tasks'   => $createdTasks,
+                'count'   => count($createdTasks),
+            ], 201);
+        }
+
+        // ── Manual mode (flat teacher_ids) ─────────────────────────
         $request->validate([
-            'title' => 'required|string|max:255',
-            'duty_id' => 'nullable|exists:duties,id',
-            'teacher_ids' => 'required|array',
-            'teacher_ids.*' => 'exists:users,id',
+            'title'          => 'required|string|max:255',
+            'duty_id'        => 'nullable|exists:duties,id',
+            'teacher_ids'    => 'required|array',
+            'teacher_ids.*'  => 'exists:users,id',
             'scheduled_date' => 'required|date',
-            'scheduled_time' => 'nullable',
-            'instructions' => 'nullable|string',
+            'scheduled_time' => 'nullable|string',
+            'instructions'   => 'nullable|string',
         ]);
 
         $teacherIds   = $request->teacher_ids;
         $createdTasks = [];
 
-        // Batch-load all assigned teachers in one query
         $teachers = \App\Models\User::whereIn('id', $teacherIds)->get()->keyBy('id');
 
         foreach ($teacherIds as $teacherId) {
@@ -82,8 +158,8 @@ class TaskController extends Controller
 
         return response()->json([
             'message' => 'Tasks created successfully',
-            'tasks' => $createdTasks,
-            'count' => count($createdTasks)
+            'tasks'   => $createdTasks,
+            'count'   => count($createdTasks),
         ], 201);
     }
 
