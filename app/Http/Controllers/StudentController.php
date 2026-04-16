@@ -26,24 +26,21 @@ class StudentController extends Controller
             });
         }
 
-        // Filter by class level
+        // Filter by class name
         if ($request->filled('class')) {
             $classValue = $request->class;
             $query->whereHas('classRoom', function ($q) use ($classValue) {
-                $q->where('level', $classValue)
-                  ->orWhere(function ($subQ) use ($classValue) {
-                      $subQ->where(function ($nameQ) use ($classValue) {
-                          $nameQ->where('name', $classValue)
-                                ->orWhere('name', "Class {$classValue}")
-                                ->orWhere('name', 'like', "{$classValue}%")
-                                ->orWhere('name', 'like', "Class {$classValue}%");
-                      })->where(function ($notQ) use ($classValue) {
-                          foreach (range(0, 9) as $digit) {
-                              $notQ->where('name', 'not like', "{$classValue}{$digit}%")
-                                   ->where('name', 'not like', "Class {$classValue}{$digit}%");
-                          }
-                      });
-                  });
+                $q->where(function ($nameQ) use ($classValue) {
+                    $nameQ->where('name', $classValue)
+                          ->orWhere('name', "Class {$classValue}")
+                          ->orWhere('name', 'like', "{$classValue}%")
+                          ->orWhere('name', 'like', "Class {$classValue}%");
+                })->where(function ($notQ) use ($classValue) {
+                    foreach (range(0, 9) as $digit) {
+                        $notQ->where('name', 'not like', "{$classValue}{$digit}%")
+                             ->where('name', 'not like', "Class {$classValue}{$digit}%");
+                    }
+                });
             });
         }
 
