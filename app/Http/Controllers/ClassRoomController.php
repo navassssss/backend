@@ -11,13 +11,22 @@ use Illuminate\Support\Facades\DB;
 class ClassRoomController extends Controller
 {
     /**
-     * Get all classes with their class teachers
+     * Get all classes with their class teachers.
+     * Teachers see only the class they are assigned to.
+     * Principal / Manager / Admin see all classes.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $classes = ClassRoom::with('classTeacher')
-            ->get()
-            ->map(function ($class) {
+        $user = $request->user();
+
+        $query = ClassRoom::with('classTeacher');
+
+        // Restrict teachers to only their own class
+        if ($user->role === 'teacher') {
+            $query->where('class_teacher_id', $user->id);
+        }
+
+        $classes = $query->get()->map(function ($class) {
                 return [
                     'id' => $class->id,
                     'name' => $class->name,
@@ -83,11 +92,18 @@ class ClassRoomController extends Controller
     }
 
     /**
-     * Get comprehensive class report
+     * Get comprehensive class report.
+     * Teachers may only view the report for their own assigned class.
      */
-    public function getReport($id)
+    public function getReport(Request $request, $id)
     {
+        $user = $request->user();
         $class = ClassRoom::with(['classTeacher', 'students'])->findOrFail($id);
+
+        // Teachers can only access their own class report
+        if ($user->role === 'teacher' && $class->class_teacher_id !== $user->id) {
+            return response()->json(['message' => 'Access denied. You can only view your own class report.'], 403);
+        }
 
         // Get all students with their data
         $students = $class->students()->with(['user'])->get();
