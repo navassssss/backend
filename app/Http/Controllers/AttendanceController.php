@@ -86,7 +86,7 @@ class AttendanceController extends Controller
                     'id'          => $r->student?->id,
                     'name'        => $r->student?->user?->name ?? 'Unknown',
                     'roll_number' => $r->student?->roll_number,
-                ]);
+                ])->values();
 
             return [
                 'id'             => $att->id,
