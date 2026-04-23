@@ -73,7 +73,7 @@ class CCEWorkController extends Controller
         
         // Preload all work counts for subjects in ONE query per aggregation
         $subjectIds = $subjects->pluck('id');
-        $workCountMap = CCEWork::selectRaw('subject_id, COUNT(*) as total, SUM(CASE WHEN deadline IS NOT NULL AND deadline < NOW() THEN 1 ELSE 0 END) as past_deadline')
+        $workCountMap = CCEWork::selectRaw('subject_id, COUNT(*) as total, SUM(CASE WHEN due_date IS NOT NULL AND due_date < NOW() THEN 1 ELSE 0 END) as past_deadline')
             ->whereIn('subject_id', $subjectIds)
             ->groupBy('subject_id')
             ->get()
