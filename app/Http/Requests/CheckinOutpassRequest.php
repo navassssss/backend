@@ -21,8 +21,6 @@ class CheckinOutpassRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'actual_in_time' => 'required|date|before_or_equal:now',
-        ];
+        return [];
     }
 }
