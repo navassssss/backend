@@ -118,6 +118,16 @@ class SubjectController extends Controller
         ]);
     }
 
+    public function destroy($id)
+    {
+        $subject = Subject::findOrFail($id);
+        $subject->delete();
+
+        return response()->json([
+            'message' => 'Subject deleted successfully'
+        ]);
+    }
+
     public function getSubjectStatistics($id)
     {
         $subject = Subject::with(['classRoom', 'teacher'])->findOrFail($id);
