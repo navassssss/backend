@@ -78,7 +78,7 @@ class OutpassController extends Controller
         }
 
         $outpass->update([
-            'actual_in_time' => $request->validated('actual_in_time'),
+            'actual_in_time' => now(),
         ]);
 
         return response()->json([
