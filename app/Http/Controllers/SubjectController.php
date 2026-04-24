@@ -51,6 +51,29 @@ class SubjectController extends Controller
         return response()->json($subjects);
     }
 
+    public function bulkCreate(Request $request)
+    {
+        $validated = $request->validate([
+            'subjects' => 'required|array',
+            'subjects.*.name' => 'required|string|max:255',
+            'subjects.*.code' => 'required|string|max:50',
+            'subjects.*.class_id' => 'required|exists:class_rooms,id',
+            'subjects.*.teacher_id' => 'required|exists:users,id',
+            'subjects.*.final_max_marks' => 'required|integer|min:1|max:100'
+        ]);
+
+        $createdSubjects = [];
+
+        foreach ($validated['subjects'] as $subjectData) {
+            $createdSubjects[] = Subject::create($subjectData);
+        }
+
+        return response()->json([
+            'message' => 'Successfully processed ' . count($createdSubjects) . ' subjects',
+            'data' => $createdSubjects
+        ], 201);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
