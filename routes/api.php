@@ -154,6 +154,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
      */
     // Subjects
     Route::get('/subjects', [App\Http\Controllers\SubjectController::class, 'index']);
+    Route::post('/subjects/bulk', [App\Http\Controllers\SubjectController::class, 'bulkCreate']);
     Route::post('/subjects', [App\Http\Controllers\SubjectController::class, 'store']);
     Route::get('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'show']);
     Route::get('/subjects/{id}/statistics', [App\Http\Controllers\SubjectController::class, 'getSubjectStatistics']);
