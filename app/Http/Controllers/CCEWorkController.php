@@ -12,7 +12,8 @@ class CCEWorkController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = CCEWork::with(['subject.classRoom', 'subject.teacher']);
+        $query = CCEWork::with(['subject.classRoom', 'subject.teacher'])
+            ->whereHas('subject');
 
         // Role-based filtering
         if ($user->role === 'teacher') {
