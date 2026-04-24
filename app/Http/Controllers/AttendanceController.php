@@ -30,7 +30,8 @@ class AttendanceController extends Controller
             'date'            => 'required|date',
             'session'         => 'required|in:morning,afternoon',
             'absent_students' => 'present|array',
-            'absent_students.*' => 'exists:students,id',
+            'absent_students.*.id' => 'required|exists:students,id',
+            'absent_students.*.reason' => 'nullable|string|max:255',
         ]);
 
         DB::transaction(function () use ($validated, $request) {
@@ -42,16 +43,20 @@ class AttendanceController extends Controller
             ]);
 
             $students  = Student::where('class_id', $validated['class_id'])->pluck('id');
-            $absentSet = collect($validated['absent_students'])->flip(); // O(1) lookup
+            $absentSet = collect($validated['absent_students'])->keyBy('id'); // O(1) lookup
 
             // Single bulk insert instead of one INSERT per student
-            $rows = $students->map(fn ($sid) => [
-                'attendance_id' => $attendance->id,
-                'student_id'    => $sid,
-                'status'        => $absentSet->has($sid) ? 'absent' : 'present',
-                'created_at'    => now(),
-                'updated_at'    => now(),
-            ])->all();
+            $rows = $students->map(function ($sid) use ($attendance, $absentSet) {
+                $isAbsent = $absentSet->has($sid);
+                return [
+                    'attendance_id' => $attendance->id,
+                    'student_id'    => $sid,
+                    'status'        => $isAbsent ? 'absent' : 'present',
+                    'remarks'       => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
+                ];
+            })->all();
 
             AttendanceRecord::insert($rows);
         });
@@ -68,7 +73,7 @@ class AttendanceController extends Controller
         $attendances = Attendance::with([
             'classRoom:id,name',
             'marker:id,name',
-            'records:id,attendance_id,student_id,status',
+            'records:id,attendance_id,student_id,status,remarks',
             'records.student:id,user_id,roll_number',
             'records.student.user:id,name',
         ])->where('date', $date)->get();
@@ -86,6 +91,7 @@ class AttendanceController extends Controller
                     'id'          => $r->student?->id,
                     'name'        => $r->student?->user?->name ?? 'Unknown',
                     'roll_number' => $r->student?->roll_number,
+                    'reason'      => $r->remarks,
                 ])->values();
 
             return [
