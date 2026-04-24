@@ -209,6 +209,11 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/push/unsubscribe', [PushSubscriptionController::class, 'unsubscribe']);
     Route::post('/push/test',        [PushSubscriptionController::class, 'test']);
     Route::post('/push/send',        [PushSubscriptionController::class, 'send']);
+    // ── Outpass Management ──────────────────────────────────────
+    Route::get('/outpasses/dashboard', [App\Http\Controllers\OutpassController::class, 'dashboard']);
+    Route::get('/outpasses', [App\Http\Controllers\OutpassController::class, 'index']);
+    Route::post('/outpasses', [App\Http\Controllers\OutpassController::class, 'store']);
+    Route::put('/outpasses/{outpass}/checkin', [App\Http\Controllers\OutpassController::class, 'checkin']);
 });
 
 /**
