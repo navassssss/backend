@@ -158,6 +158,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'show']);
     Route::get('/subjects/{id}/statistics', [App\Http\Controllers\SubjectController::class, 'getSubjectStatistics']);
     Route::put('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'update']);
+    Route::delete('/subjects/{id}', [App\Http\Controllers\SubjectController::class, 'destroy']);
     Route::post('/subjects/{id}/toggle-lock', [App\Http\Controllers\SubjectController::class, 'toggleLock']);
 
     // CCE Works
