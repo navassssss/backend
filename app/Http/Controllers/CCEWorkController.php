@@ -128,14 +128,19 @@ class CCEWorkController extends Controller
 
         // Auto-create submissions for all students in the class
         $subject = $work->subject;
-        $students = Student::where('class_id', $subject->class_id)->get();
+        $studentIds = Student::where('class_id', $subject->class_id)->pluck('id');
+        $now = now();
 
-        foreach ($students as $student) {
-            CCESubmission::create([
-                'work_id' => $work->id,
-                'student_id' => $student->id,
-                'status' => 'pending'
-            ]);
+        if ($studentIds->isNotEmpty()) {
+            $submissions = $studentIds->map(fn($id) => [
+                'work_id'    => $work->id,
+                'student_id' => $id,
+                'status'     => 'pending',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ])->toArray();
+
+            CCESubmission::insert($submissions);
         }
 
         return response()->json([
