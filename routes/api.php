@@ -170,6 +170,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::delete('/cce/works/{id}', [App\Http\Controllers\CCEWorkController::class, 'destroy']);
 
     // CCE Submissions (Teacher)
+    Route::post('/cce/submissions/bulk-evaluate', [App\Http\Controllers\CCESubmissionController::class, 'bulkEvaluate']);
     Route::post('/cce/submissions/{id}/evaluate', [App\Http\Controllers\CCESubmissionController::class, 'evaluate']);
     
     // CCE Student Marks (Principal)

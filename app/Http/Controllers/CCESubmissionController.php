@@ -34,6 +34,46 @@ class CCESubmissionController extends Controller
         ]);
     }
 
+    public function bulkEvaluate(Request $request)
+    {
+        $validated = $request->validate([
+            'submission_ids'   => 'required|array|min:1',
+            'submission_ids.*' => 'integer|exists:cce_submissions,id',
+            'marks_obtained'   => 'required|numeric|min:0',
+            'feedback'         => 'nullable|string|max:1000',
+        ]);
+
+        // Verify all submissions belong to the same work and marks don't exceed max
+        $submissions = CCESubmission::with('work')
+            ->whereIn('id', $validated['submission_ids'])
+            ->get();
+
+        if ($submissions->isEmpty()) {
+            return response()->json(['message' => 'No valid submissions found'], 422);
+        }
+
+        $maxMarks = $submissions->first()->work->max_marks;
+
+        if ($validated['marks_obtained'] > $maxMarks) {
+            return response()->json([
+                'message' => "Marks ({$validated['marks_obtained']}) exceed maximum allowed ({$maxMarks})"
+            ], 422);
+        }
+
+        CCESubmission::whereIn('id', $validated['submission_ids'])->update([
+            'marks_obtained' => $validated['marks_obtained'],
+            'feedback'       => $validated['feedback'] ?? null,
+            'evaluated_by'   => $request->user()->id,
+            'evaluated_at'   => now(),
+            'status'         => 'evaluated',
+        ]);
+
+        return response()->json([
+            'message' => 'Bulk evaluation complete',
+            'updated' => $submissions->count(),
+        ]);
+    }
+
     // Student endpoints
     public function studentWorks(Request $request)
     {
