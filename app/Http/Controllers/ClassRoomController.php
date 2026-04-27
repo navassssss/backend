@@ -426,4 +426,21 @@ class ClassRoomController extends Controller
 
         return $studentDetails;
     }
+
+    public function destroy($id)
+    {
+        $class = ClassRoom::findOrFail($id);
+        
+        if ($class->students()->count() > 0) {
+            return response()->json([
+                'message' => 'Cannot delete class with assigned students. Please reassign students first.'
+            ], 422);
+        }
+
+        $class->delete();
+
+        return response()->json([
+            'message' => 'Class deleted successfully'
+        ]);
+    }
 }

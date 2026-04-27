@@ -57,6 +57,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/classes/{id}/assign-teacher', [ClassRoomController::class, 'assignTeacher']);
     Route::delete('/classes/{id}/remove-teacher', [ClassRoomController::class, 'removeTeacher']);
     Route::get('/classes/{id}/report', [ClassRoomController::class, 'getReport']);
+    Route::delete('/classes/{id}', [ClassRoomController::class, 'destroy']);
 
 
 
