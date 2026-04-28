@@ -127,10 +127,10 @@ class CCEWorkController extends Controller
 
         $work = CCEWork::create($validated);
 
-        // Auto-create submissions — respects subject assignment_scope
-        $subject    = $work->subject;
-        $studentIds = $subject->effectiveStudentIds();
-        $now        = now();
+        // Auto-create submissions for all students in the class
+        $subject = $work->subject;
+        $studentIds = Student::where('class_id', $subject->class_id)->pluck('id');
+        $now = now();
 
         if ($studentIds->isNotEmpty()) {
             $submissions = $studentIds->map(fn($id) => [
