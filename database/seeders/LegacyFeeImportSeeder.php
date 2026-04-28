@@ -2,167 +2,224 @@
 
 namespace Database\Seeders;
 
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use App\Models\Student;
 use App\Models\MonthlyFeePlan;
-use App\Models\FeePayment;
-use App\Services\FeeManagementService;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
+/**
+ * Imports legacy fee balances from a CSV file and distributes the
+ * remaining balance into individual MonthlyFeePlan records.
+ *
+ * CSV columns (0-indexed):
+ *   0 → AD_NO & Name  (e.g. "791 MUHAMMED FALAH" or "H220 JOHN")
+ *   1 → Class
+ *   2 → Monthly Fee
+ *   3 → Total Remaining Balance
+ *
+ * Balance distribution rule:
+ *   - unpaidMonths = floor(remaining / monthlyFee)
+ *   - partialAmount = remaining % monthlyFee  (creates 1 extra older plan if > 0)
+ *   - Plans generated starting April 2026 going backwards.
+ */
 class LegacyFeeImportSeeder extends Seeder
 {
-    private $feeService;
+    /** Anchor: the current month from which backwards generation starts. */
+    private const ANCHOR_YEAR  = 2026;
+    private const ANCHOR_MONTH = 4;
 
-    public function __construct(FeeManagementService $feeService)
+    public function run(): void
     {
-        $this->feeService = $feeService;
-    }
+        $filePath = database_path('seeders/data/monthly.csv');
 
-    public function run()
-    {
-        $filePath = storage_path('app/public/monthly.csv');
-        if (!file_exists($filePath)) {
+        if (! file_exists($filePath)) {
             $this->command->error("CSV file not found at: {$filePath}");
             return;
         }
 
         $this->command->info("Reading CSV from: {$filePath}");
 
-        // Open CSV file
         $file = fopen($filePath, 'r');
-        
-        // Skip header row if exists
-        $header = fgetcsv($file); 
+        fgetcsv($file); // skip header
 
         DB::beginTransaction();
 
         try {
-            $processed = 0;
-            $skipped = 0;
+            $processed   = 0;
+            $skipped     = 0;
+            $zeroBalance = []; // students found but with no remaining balance
 
             while (($row = fgetcsv($file)) !== false) {
-                 // Column Expected structure based on image:
-                 // 0: AD.NO & NAME (e.g., "791 MUHAMMED FALAH")
-                 // 1: CLASS
-                 // 2: MONTHLY
-                 // 3: REMAINING
+                $adNoName     = $row[0] ?? '';
+                $monthlyStr   = $row[2] ?? 0;
+                $remainingStr = $row[3] ?? 0;
 
-                $adNoName = $row[0] ?? '';
-                $monthlyStr = $row[2] ?? 0;
-                $remainingStr = $row[3] ?? 0; // The Remaining column is index 3
-
-                // Extract Ad No (first part, can be H123 or 791)
-                // "791 MUHAMMED..." -> 791
-                // "H220 MUHAMMED..." -> H220
-                if (!preg_match('/^([Hh]?\d+)/', trim($adNoName), $matches)) {
-                    // Try to find ANY number if not at start, or just skip
-                    // $this->command->warn("  Skipping row (No Ad No found): " . $adNoName);
-                    // $skipped++;
-                    continue; 
+                // ── Extract roll number ────────────────────────────────────
+                if (! preg_match('/^([Hh]?\d+)/', trim($adNoName), $matches)) {
+                    continue;
                 }
-                $rollNo = strtoupper($matches[1]); // Ensure H is uppercase if present
+                $rollNo = strtoupper($matches[1]);
 
-                // Parse Amounts
-                // Handle "NONE", empty, or text as 0
-                $monthlyFee = $this->parseAmount($monthlyStr);
+                // ── Parse amounts ──────────────────────────────────────────
+                $monthlyFee     = $this->parseAmount($monthlyStr);
                 $totalRemaining = $this->parseAmount($remainingStr);
 
+                // ── Student lookup (always first, so we can show names) ────
                 $student = Student::where('roll_number', $rollNo)->first();
 
-                if (!$student) {
-                    $this->command->warn("  Student with Roll No {$rollNo} not found. Skipping.");
+                if (! $student) {
+                    $this->command->warn("  [{$rollNo}] Not found in DB. Skipping.");
                     $skipped++;
                     continue;
                 }
 
-                $this->command->info("Processing {$student->user->name} ({$rollNo})...");
+                $label = "[{$rollNo}] {$student->user->name}";
 
-                // 1. Update Student's Fixed Monthly Fee
+                // ── Invalid fee data guard ─────────────────────────────────
+                if ($monthlyFee <= 0 || $totalRemaining < 0) {
+                    $this->command->warn("  {$label} — invalid data (monthly={$monthlyFee}, remaining={$totalRemaining}). Skipping.");
+                    $skipped++;
+                    continue;
+                }
+
+                // ── Zero remaining — fully paid / no debt ──────────────────
+                if ($totalRemaining === 0.0) {
+                    $zeroBalance[] = $label;
+                    // Still update monthly_fee if provided
+                    if ($monthlyFee > 0) {
+                        $student->monthly_fee = $monthlyFee;
+                        $student->save();
+                    }
+                    continue;
+                }
+
+                // ── Normal processing ──────────────────────────────────────
+                $this->command->info("  Processing {$label} | monthly={$monthlyFee}  remaining={$totalRemaining}");
+
                 $student->monthly_fee = $monthlyFee;
                 $student->save();
 
-                // 2. Ensure Plans for Jan 2026 and Feb 2026 Exists
-                // We use updateOrCreate to ensure we don't duplicate if run multiple times
-                // If Monthly Fee is 0, we might still want to create the plan as 0 or skip?
-                // Let's create it as 0 to be consistent with the "Standard"
-                $planJan = MonthlyFeePlan::updateOrCreate(
-                    ['student_id' => $student->id, 'year' => 2026, 'month' => 1],
-                    ['payable_amount' => $monthlyFee, 'reason' => 'Standard Fee (Legacy Import)']
-                );
+                $plans = $this->buildFeePlans($student->id, $monthlyFee, $totalRemaining);
 
-                $planFeb = MonthlyFeePlan::updateOrCreate(
-                    ['student_id' => $student->id, 'year' => 2026, 'month' => 2],
-                    ['payable_amount' => $monthlyFee, 'reason' => 'Standard Fee (Legacy Import)']
-                );
-
-                // 3. Calculate Logic
-                // Total expected for Jan & Feb
-                $janFebTotal = $monthlyFee * 2;
-                
-                // Difference between what they SHOULD owe for Jan+Feb and what they ACTUALLY owe
-                $diff = $totalRemaining - $janFebTotal;
-
-                if ($diff > 0) {
-                    // SCENARIO: They owe MORE than just Jan+Feb.
-                    // This means they have previous year backlog.
-                    // We create a "Previous Year Balance" plan for Dec 2025.
-                    
+                foreach ($plans as $plan) {
                     MonthlyFeePlan::updateOrCreate(
-                        ['student_id' => $student->id, 'year' => 2025, 'month' => 12],
                         [
-                            'payable_amount' => $diff,
-                            'reason' => 'Previous Year Remaining Balance'
+                            'student_id' => $plan['student_id'],
+                            'year'       => $plan['year'],
+                            'month'      => $plan['month'],
+                        ],
+                        [
+                            'payable_amount' => $plan['payable_amount'],
+                            'reason'         => $plan['reason'],
                         ]
                     );
-
-                    $this->command->line("  -> Added Previous Year Balance: {$diff}");
-
-                } elseif ($diff < 0) {
-                    // SCENARIO: They owe LESS than Jan+Feb.
-                    // This means they have already paid some of Jan or Feb.
-                    // We need to create a "Legacy Payment" to clear the difference.
-                    
-                    $paymentAmount = abs($diff);
-                    
-                    // Only process payment if amount > 0
-                    if ($paymentAmount > 0) {
-                        try {
-                            $this->feeService->processPayment(
-                                $student->id,
-                                $paymentAmount,
-                                '2026-01-01', // Date of import
-                                1, // Admin ID (system)
-                                'Legacy Balance Adjustment',
-                                false
-                            );
-                            $this->command->line("  -> Created Adjustment Payment: {$paymentAmount}");
-                        } catch (\Exception $e) {
-                             $this->command->error("     Failed to create payment: " . $e->getMessage());
-                        }
-                    }
-                } else {
-                     $this->command->line("  -> Balance matches exactly (Jan+Feb). No action needed.");
                 }
-                
+
+                $this->command->line("    → " . count($plans) . " fee plan(s) created/updated.");
                 $processed++;
             }
 
             fclose($file);
             DB::commit();
-            $this->command->info("Legacy Import Completed. Processed: {$processed}, Skipped: {$skipped}");
 
-        } catch (\Exception $e) {
+            // ── Final summary ──────────────────────────────────────────────
+            $this->command->info('');
+            $this->command->info('═══════════════════════════════════════════════');
+            $this->command->info('  Legacy Import Completed');
+            $this->command->info("  Plans generated (processed)  : {$processed}");
+            $this->command->info("  Skipped (not found/invalid)  : {$skipped}");
+            $this->command->info("  Zero balance (no plans made) : " . count($zeroBalance));
+            $this->command->info('═══════════════════════════════════════════════');
+
+            if (! empty($zeroBalance)) {
+                $this->command->info('');
+                $this->command->warn('  Zero-balance students (paid up / no debt — no fee plans generated):');
+                foreach ($zeroBalance as $entry) {
+                    $this->command->line("    - {$entry}");
+                }
+                $this->command->info('');
+            }
+
+        } catch (\Throwable $e) {
             fclose($file);
             DB::rollBack();
-            $this->command->error("Error: " . $e->getMessage());
+            $this->command->error("Fatal error: " . $e->getMessage());
+            throw $e;
         }
     }
 
-    private function parseAmount($value) {
-        if (empty($value)) return 0;
-        $clean = preg_replace('/[^0-9.]/', '', strtolower(trim($value)));
-        if (empty($clean) || strtolower(trim($value)) === 'none') return 0;
-        return (float)$clean;
+    // ────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build the list of MonthlyFeePlan payloads for a student.
+     *
+     * Generates plans starting from ANCHOR (Apr 2026) going backwards:
+     *   - floor(remaining / monthly) full-amount plans
+     *   - 1 partial plan for the remainder (if any), as the oldest month
+     *
+     * @return array<int, array{student_id: int, year: int, month: int, payable_amount: float, reason: string}>
+     */
+    private function buildFeePlans(int $studentId, float $monthlyFee, float $totalRemaining): array
+    {
+        $unpaidMonths  = (int) floor($totalRemaining / $monthlyFee);
+        $partialAmount = round(fmod($totalRemaining, $monthlyFee), 2);
+
+        $plans  = [];
+        $cursor = Carbon::create(self::ANCHOR_YEAR, self::ANCHOR_MONTH, 1);
+
+        // Full monthly plans — newest first (Apr 2026 → backwards)
+        for ($i = 0; $i < $unpaidMonths; $i++) {
+            $plans[] = $this->makePlanEntry($studentId, $cursor, $monthlyFee);
+            $cursor->subMonth();
+        }
+
+        // Partial plan — one additional older month
+        if ($partialAmount > 0) {
+            $plans[] = $this->makePlanEntry($studentId, $cursor, $partialAmount, 'Partial Legacy Balance');
+        }
+
+        return $plans;
+    }
+
+    /**
+     * Assemble a single plan array from a Carbon date.
+     */
+    private function makePlanEntry(
+        int    $studentId,
+        Carbon $date,
+        float  $amount,
+        string $reason = 'Standard Fee (Legacy Import)'
+    ): array {
+        return [
+            'student_id'     => $studentId,
+            'year'           => (int) $date->year,
+            'month'          => (int) $date->month,
+            'payable_amount' => $amount,
+            'reason'         => $reason,
+        ];
+    }
+
+    /**
+     * Parse a raw CSV cell into a float.
+     * Returns 0 for empty, "NONE", or non-numeric strings.
+     */
+    private function parseAmount(mixed $value): float
+    {
+        if (empty($value)) {
+            return 0.0;
+        }
+
+        $trimmed = strtolower(trim((string) $value));
+
+        if ($trimmed === 'none') {
+            return 0.0;
+        }
+
+        $clean = preg_replace('/[^0-9.]/', '', $trimmed);
+
+        return empty($clean) ? 0.0 : (float) $clean;
     }
 }
