@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 
@@ -19,16 +20,34 @@ class Student extends Model
         'opening_balance',
         'monthly_fee',
         'last_processed_row',
+        'is_hifz',
     ];
 
     protected $casts = [
-        'joined_at' => 'date',
-        'wallet_balance' => 'decimal:2',
+        'joined_at'       => 'date',
+        'wallet_balance'  => 'decimal:2',
         'opening_balance' => 'decimal:2',
-        'monthly_fee' => 'decimal:2',
+        'monthly_fee'     => 'decimal:2',
+        'is_hifz'         => 'boolean',
     ];
 
     protected $appends = ['stars', 'monthly_points', 'name'];
+
+    // ── Scopes ──────────────────────────────────────────────────────────────
+
+    /** Exclude Hifz students — use in all academic controllers. */
+    public function scopeAcademic(Builder $query): Builder
+    {
+        return $query->where('is_hifz', false);
+    }
+
+    /** Only Hifz students — use in Donations module if needed. */
+    public function scopeHifz(Builder $query): Builder
+    {
+        return $query->where('is_hifz', true);
+    }
+
+    // ── Relationships ────────────────────────────────────────────────────────
 
     /**
      * Relationships
