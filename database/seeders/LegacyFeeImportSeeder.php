@@ -29,9 +29,12 @@ class LegacyFeeImportSeeder extends Seeder
     private const ANCHOR_YEAR  = 2026;
     private const ANCHOR_MONTH = 4;
 
+    /** Override in subclasses to point at a different CSV file. */
+    protected string $csvFile = 'monthly.csv';
+
     public function run(): void
     {
-        $filePath = database_path('seeders/data/monthly.csv');
+        $filePath = database_path('seeders/data/' . $this->csvFile);
 
         if (! file_exists($filePath)) {
             $this->command->error("CSV file not found at: {$filePath}");
