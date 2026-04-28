@@ -86,7 +86,18 @@ class SubjectController extends Controller
             'assignment_scope' => 'sometimes|in:full_class,selected_students',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
+        ], [
+            'name.required'        => 'Please enter a subject name.',
+            'code.required'        => 'Please enter a subject code.',
+            'class_id.required'    => 'Please select a class.',
+            'class_id.exists'      => 'The selected class does not exist.',
+            'teacher_id.required'  => 'Please select a teacher.',
+            'teacher_id.exists'    => 'The selected teacher does not exist.',
+            'final_max_marks.required' => 'Please enter the maximum marks.',
+            'final_max_marks.min'  => 'Maximum marks must be at least 1.',
+            'final_max_marks.max'  => 'Maximum marks cannot exceed 100.',
         ]);
+
 
         $scope = $validated['assignment_scope'] ?? 'full_class';
         $studentIds = $validated['student_ids'] ?? [];
