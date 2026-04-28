@@ -19,7 +19,7 @@ class ClassRoomController extends Controller
     {
         $user = $request->user();
 
-        $query = ClassRoom::with('classTeacher');
+        $query = ClassRoom::with('classTeacher')->academic();
 
         // Restrict teachers to only their own class
         if ($user->role === 'teacher') {

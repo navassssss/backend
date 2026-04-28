@@ -47,7 +47,7 @@ class LeaderboardService
 
     private function computeStudents(string $type)
     {
-        $query = Student::with(['user', 'class']);
+        $query = Student::with(['user', 'class'])->academic();
 
         $cm = now()->month;
         $cy = now()->year;
@@ -88,7 +88,7 @@ class LeaderboardService
 
     private function computeClasses(string $type)
     {
-        $query = ClassRoom::withCount('students');
+        $query = ClassRoom::academic()->withCount('students');
 
         $cm = now()->month;
         $cy = now()->year;

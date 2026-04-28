@@ -76,6 +76,9 @@ class LegacyFeeImportSeeder extends Seeder
 
                 $label = "[{$rollNo}] {$student->user->name}";
 
+                // ── Detect Hifz student via H-prefix roll number ───────────
+                $isHifz = str_starts_with($rollNo, 'H');
+
                 // ── Invalid fee data guard ─────────────────────────────────
                 if ($monthlyFee <= 0 || $totalRemaining < 0) {
                     $this->command->warn("  {$label} — invalid data (monthly={$monthlyFee}, remaining={$totalRemaining}). Skipping.");
@@ -86,9 +89,10 @@ class LegacyFeeImportSeeder extends Seeder
                 // ── Zero remaining — fully paid / no debt ──────────────────
                 if ($totalRemaining === 0.0) {
                     $zeroBalance[] = $label;
-                    // Still update monthly_fee if provided
+                    // Still update monthly_fee and is_hifz if applicable
                     if ($monthlyFee > 0) {
                         $student->monthly_fee = $monthlyFee;
+                        $student->is_hifz = $isHifz;
                         $student->save();
                     }
                     continue;
@@ -98,6 +102,7 @@ class LegacyFeeImportSeeder extends Seeder
                 $this->command->info("  Processing {$label} | monthly={$monthlyFee}  remaining={$totalRemaining}");
 
                 $student->monthly_fee = $monthlyFee;
+                $student->is_hifz = $isHifz;
                 $student->save();
 
                 $plans = $this->buildFeePlans($student->id, $monthlyFee, $totalRemaining);

@@ -12,7 +12,7 @@ class StudentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Student::with(['classRoom', 'user']);
+        $query = Student::with(['classRoom', 'user'])->academic();
 
         // Search by name or roll number
         // Search by name (in users table) or roll number

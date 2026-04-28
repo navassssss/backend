@@ -42,7 +42,7 @@ class AttendanceController extends Controller
                 'marked_by' => $request->user()->id,
             ]);
 
-            $students  = Student::where('class_id', $validated['class_id'])->pluck('id');
+            $students  = Student::where('class_id', $validated['class_id'])->academic()->pluck('id');
             $absentSet = collect($validated['absent_students'])->keyBy('id'); // O(1) lookup
 
             // Single bulk insert instead of one INSERT per student
@@ -153,6 +153,7 @@ class AttendanceController extends Controller
     public function classes()
     {
         $classes = ClassRoom::select('id', 'name')
+            ->academic()
             ->withCount('students')
             ->get()
             ->map(fn ($c) => [
@@ -168,6 +169,7 @@ class AttendanceController extends Controller
     public function students($classId)
     {
         $students = Student::where('class_id', $classId)
+            ->academic()
             ->with('user:id,name')
             ->orderByRaw('CAST(roll_number AS UNSIGNED) ASC')
             ->get()

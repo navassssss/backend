@@ -28,7 +28,7 @@ class DashboardService
                 ],
                 [
                     'label' => 'Total Students',
-                    'value' => \App\Models\Student::count(),
+                    'value' => \App\Models\Student::academic()->count(),
                     'icon' => 'GraduationCap',
                     'color' => 'bg-info-light text-info'
                 ],
