@@ -111,9 +111,14 @@ class SubjectController extends Controller
             'assignment_scope' => 'sometimes|in:full_class,selected_students',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
+            'code'             => [
+                'required', 'string', 'max:50',
+                \Illuminate\Validation\Rule::unique('subjects')->where('class_id', $request->class_id),
+            ],
         ], [
             'name.required'        => 'Please enter a subject name.',
             'code.required'        => 'Please enter a subject code.',
+            'code.unique'          => 'A subject with this code already exists in the selected class.',
             'class_id.required'    => 'Please select a class.',
             'class_id.exists'      => 'The selected class does not exist.',
             'teacher_id.required'  => 'Please select a teacher.',
@@ -170,12 +175,19 @@ class SubjectController extends Controller
 
         $validated = $request->validate([
             'name'             => 'sometimes|string|max:255',
-            'code'             => 'sometimes|string|max:50',
+            'code'             => [
+                'sometimes', 'string', 'max:50',
+                \Illuminate\Validation\Rule::unique('subjects')
+                    ->where('class_id', $request->class_id ?? $subject->class_id)
+                    ->ignore($id),
+            ],
             'teacher_id'       => 'sometimes|exists:users,id',
             'final_max_marks'  => 'sometimes|integer|min:1|max:100',
             'assignment_scope' => 'sometimes|in:full_class,selected_students',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
+        ], [
+            'code.unique' => 'A subject with this code already exists in the selected class.',
         ]);
 
         $studentIds = $validated['student_ids'] ?? null;
