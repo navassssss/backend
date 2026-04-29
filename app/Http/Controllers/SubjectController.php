@@ -8,6 +8,23 @@ use Illuminate\Http\Request;
 
 class SubjectController extends Controller
 {
+    /**
+     * Determine if the current user can create/edit/delete subjects.
+     * Principal & manager: always yes.
+     * Teacher: only if they have the manage_cce permission.
+     */
+    private function canManageSubjects(Request $request): bool
+    {
+        $user = $request->user();
+        if (in_array($user->role, ['principal', 'manager'])) {
+            return true;
+        }
+        if ($user->role === 'teacher') {
+            return $user->permissions()->where('name', 'manage_cce')->exists();
+        }
+        return false;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -53,6 +70,10 @@ class SubjectController extends Controller
 
     public function bulkCreate(Request $request)
     {
+        if (!$this->canManageSubjects($request)) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to manage subjects.'], 403);
+        }
+
         $validated = $request->validate([
             'subjects'                     => 'required|array',
             'subjects.*.name'              => 'required|string|max:255',
@@ -77,6 +98,10 @@ class SubjectController extends Controller
 
     public function store(Request $request)
     {
+        if (!$this->canManageSubjects($request)) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to manage subjects.'], 403);
+        }
+
         $validated = $request->validate([
             'name'             => 'required|string|max:255',
             'code'             => 'required|string|max:50',
@@ -137,6 +162,10 @@ class SubjectController extends Controller
 
     public function update(Request $request, $id)
     {
+        if (!$this->canManageSubjects($request)) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to manage subjects.'], 403);
+        }
+
         $subject = Subject::findOrFail($id);
 
         $validated = $request->validate([
@@ -168,8 +197,12 @@ class SubjectController extends Controller
         ]);
     }
 
-    public function toggleLock($id)
+    public function toggleLock(Request $request, $id)
     {
+        if (!$this->canManageSubjects($request)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
         $subject = Subject::findOrFail($id);
         $subject->is_locked = !$subject->is_locked;
         $subject->save();
@@ -180,8 +213,12 @@ class SubjectController extends Controller
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
+        if (!$this->canManageSubjects($request)) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to manage subjects.'], 403);
+        }
+
         $subject = Subject::findOrFail($id);
         $subject->delete();
 
