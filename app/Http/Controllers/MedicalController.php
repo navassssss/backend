@@ -143,6 +143,24 @@ class MedicalController extends Controller
     }
 
     /**
+     * Toggle doctor visit status
+     */
+    public function toggleDoctor(MedicalRecord $medical)
+    {
+        $this->authorize();
+
+        if ($medical->status !== 'active') {
+            return response()->json(['message' => 'Cannot modify a resolved record'], 422);
+        }
+
+        $medical->update([
+            'went_to_doctor' => !$medical->went_to_doctor
+        ]);
+
+        return response()->json(['went_to_doctor' => $medical->went_to_doctor]);
+    }
+
+    /**
      * Single record
      */
     public function show(MedicalRecord $medical)
