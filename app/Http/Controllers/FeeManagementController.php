@@ -469,6 +469,18 @@ class FeeManagementController extends Controller
     }
 
     /**
+     * Get monthly student report
+     */
+    public function getMonthlyReport(Request $request)
+    {
+        $year = $request->query('year', now()->year);
+        $month = $request->query('month', now()->month);
+        
+        $report = $this->feeService->getMonthlyStudentReport((int)$year, (int)$month);
+        return response()->json($report);
+    }
+
+    /**
      * Get daily collection report
      */
     public function getDailyReport($date)
