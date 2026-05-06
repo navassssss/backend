@@ -16,7 +16,7 @@ class SubjectController extends Controller
     private function canManageSubjects(Request $request): bool
     {
         $user = $request->user();
-        if (in_array($user->role, ['principal', 'manager'])) {
+        if ($user->role === 'principal') {
             return true;
         }
         if ($user->role === 'teacher') {

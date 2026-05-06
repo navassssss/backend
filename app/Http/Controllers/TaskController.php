@@ -190,7 +190,7 @@ class TaskController extends Controller
      */
     public function bulkDelete(Request $request)
     {
-        if (Auth::user()->role !== 'principal' && Auth::user()->role !== 'manager') {
+        if (Auth::user()->role !== 'principal') {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

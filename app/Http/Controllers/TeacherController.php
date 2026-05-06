@@ -12,7 +12,7 @@ class TeacherController extends Controller
     public function index(Request $request)
     {
         if ($request->query('scope') === 'assignable') {
-            return User::whereIn('role', ['principal', 'manager', 'teacher'])
+            return User::whereIn('role', ['principal', 'teacher'])
                 ->select('id', 'name', 'role', 'can_review_achievements')
                 ->orderBy('name')
                 ->get();
@@ -157,7 +157,7 @@ class TeacherController extends Controller
         $actor = auth()->user();
 
         // Only a real principal (by role) can grant/revoke vice-principal status
-        if (!in_array($actor->role, ['principal', 'manager'])) {
+        if ($actor->role !== 'principal') {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -180,7 +180,7 @@ class TeacherController extends Controller
 
     public function syncPermissions(Request $request, User $teacher)
     {
-        if (auth()->user()->role !== 'principal' && auth()->user()->role !== 'manager') {
+        if (auth()->user()->role !== 'principal') {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
