@@ -537,4 +537,25 @@ class FeeManagementService
         
         return $payment->receipt_issued;
     }
+    /**
+     * Delete a payment and its allocations
+     */
+    public function deletePayment(int $paymentId): void
+    {
+        DB::beginTransaction();
+        try {
+            $payment = FeePayment::findOrFail($paymentId);
+            
+            // Delete associated allocations explicitly just in case no cascading deletes
+            FeePaymentAllocation::where('fee_payment_id', $paymentId)->delete();
+            
+            // Delete the payment itself
+            $payment->delete();
+            
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
 }
