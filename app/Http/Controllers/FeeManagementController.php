@@ -405,9 +405,16 @@ class FeeManagementController extends Controller
     /**
      * Get overall financial summary
      */
-    public function getSummary()
+    public function getSummary(Request $request)
     {
-        $summary = $this->feeService->getOverallSummary();
+        $year = $request->query('year');
+        $month = $request->query('month');
+        
+        $summary = $this->feeService->getOverallSummary(
+            $year ? (int)$year : null,
+            $month ? (int)$month : null
+        );
+        
         return response()->json($summary);
     }
 

@@ -498,22 +498,27 @@ class FeeManagementService
     }
 
     /**
-     * Get overall summary till today
+     * Get overall summary till today or a specific limit
      */
-    public function getOverallSummary(): array
+    public function getOverallSummary(?int $limitYear = null, ?int $limitMonth = null): array
     {
         $today = now();
-        $currentYear = $today->year;
-        $currentMonth = $today->month;
+        $limitYear = $limitYear ?? $today->year;
+        $limitMonth = $limitMonth ?? $today->month;
         
-        // Total expected till today
-        $totalExpected = MonthlyFeePlan::where(function($q) use ($currentYear, $currentMonth) {
-            $q->where('year', '<', $currentYear)
-              ->orWhere(function($q2) use ($currentYear, $currentMonth) {
-                  $q2->where('year', $currentYear)
-                     ->where('month', '<=', $currentMonth);
+        // Total expected till limit date, excluding bulk import plans
+        $totalExpected = MonthlyFeePlan::where(function($q) use ($limitYear, $limitMonth) {
+            $q->where('year', '<', $limitYear)
+              ->orWhere(function($q2) use ($limitYear, $limitMonth) {
+                  $q2->where('year', $limitYear)
+                     ->where('month', '<=', $limitMonth);
               });
-        })->sum('payable_amount');
+        })
+        ->where(function ($q) {
+            $q->whereNull('reason')
+              ->orWhere('reason', '!=', 'Pre-paid Import (Migration)');
+        })
+        ->sum('payable_amount');
         
         // Total paid (all time), excluding bulk imports
         $totalPaid = FeePaymentAllocation::whereHas('payment', function ($query) {
