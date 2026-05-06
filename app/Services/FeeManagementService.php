@@ -648,35 +648,34 @@ class FeeManagementService
         $totalPaid = 0;
 
         foreach ($students as $student) {
-            $expected = (float) ($plans[$student->id] ?? 0);
+            // Use the plan's expected amount, or fallback to the student's default monthly fee
+            $expected = (float) ($plans[$student->id] ?? $student->monthly_fee);
             $paid = (float) ($allocations[$student->id] ?? 0);
             
-            if ($expected > 0 || $paid > 0) {
-                $balance = max(0, $expected - $paid);
-                
-                $status = 'unpaid';
-                if ($balance <= 0 && $expected > 0) {
-                    $status = 'paid';
-                } elseif ($balance <= 0 && $expected == 0 && $paid > 0) {
-                    $status = 'overpaid';
-                } elseif ($paid > 0) {
-                    $status = 'partial';
-                }
-
-                $totalExpected += $expected;
-                $totalPaid += $paid;
-
-                $reportStudents[] = [
-                    'student_id' => $student->id,
-                    'roll_number' => $student->roll_number,
-                    'student_name' => $student->user->name ?? 'Unknown',
-                    'class_name' => $student->class->name ?? 'Unknown',
-                    'expected' => $expected,
-                    'paid' => $paid,
-                    'balance' => $balance,
-                    'status' => $status,
-                ];
+            $balance = max(0, $expected - $paid);
+            
+            $status = 'unpaid';
+            if ($balance <= 0 && $expected > 0) {
+                $status = 'paid';
+            } elseif ($balance <= 0 && $expected == 0 && $paid > 0) {
+                $status = 'overpaid';
+            } elseif ($paid > 0) {
+                $status = 'partial';
             }
+
+            $totalExpected += $expected;
+            $totalPaid += $paid;
+
+            $reportStudents[] = [
+                'student_id' => $student->id,
+                'roll_number' => $student->roll_number,
+                'student_name' => $student->user->name ?? 'Unknown',
+                'class_name' => $student->class->name ?? 'Unknown',
+                'expected' => $expected,
+                'paid' => $paid,
+                'balance' => $balance,
+                'status' => $status,
+            ];
         }
 
         return [
