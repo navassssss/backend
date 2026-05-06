@@ -15,7 +15,7 @@ return new class extends Migration
     {
         $manager = User::where('role', 'manager')->first();
         if ($manager) {
-            $manager->email = 'hyderhudawi@gmail.com';
+            $manager->email = 'admin@dhic.com';
             $manager->password = Hash::make('admin@dhic');
             $manager->save();
         }
