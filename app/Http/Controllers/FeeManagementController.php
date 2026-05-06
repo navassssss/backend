@@ -44,20 +44,50 @@ class FeeManagementController extends Controller
             });
         }
 
-        // OPTIMIZATION: Paginate first, then batch-calculate status for only the visible page
-        $paginatedStudents = $query->paginate($perPage, ['*'], 'page', $page);
-        $studentIds = collect($paginatedStudents->items())->pluck('id')->toArray();
-        
-        // Ensure fee plans exist up to current month for the visible students
-        foreach ($studentIds as $id) {
-            $this->feeService->ensureFeePlans($id);
+        // If filtering by status, we must determine status of all matching students first
+        if ($statusFilter !== 'all') {
+            $allMatchingIds = $query->pluck('id')->toArray();
+            
+            if (!empty($allMatchingIds)) {
+                // Ensure fee plans exist for accuracy
+                foreach ($allMatchingIds as $id) {
+                    $this->feeService->ensureFeePlans($id);
+                }
+
+                // Get status for all matching
+                $statusMap = $this->feeService->batchGetStudentSummary($allMatchingIds);
+                
+                $filteredIds = [];
+                foreach ($allMatchingIds as $id) {
+                    $status = $statusMap[$id]['status'] ?? 'paid';
+                    if ($status === $statusFilter) {
+                        $filteredIds[] = $id;
+                    }
+                }
+                
+                // Restrict main query to these IDs
+                $query->whereIn('students.id', $filteredIds);
+            } else {
+                $query->whereIn('students.id', []); // ensure empty result
+            }
         }
 
-        // 3 SQL queries total for the entire page (regardless of page size)
-        $statusMap = $this->feeService->batchGetStudentSummary($studentIds);
+        // Now paginate (this will correctly have the reduced set if filtered)
+        $paginatedStudents = $query->paginate($perPage, ['*'], 'page', $page);
+        $visibleStudentIds = collect($paginatedStudents->items())->pluck('id')->toArray();
+        
+        // Ensure fee plans exist for the visible page (if we didn't already do it for all)
+        if ($statusFilter === 'all' && !empty($visibleStudentIds)) {
+            foreach ($visibleStudentIds as $id) {
+                $this->feeService->ensureFeePlans($id);
+            }
+        }
 
-        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) use ($statusMap) {
-            $s = $statusMap[$student->id] ?? ['total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0, 'status' => 'paid', 'last_payment_date' => null];
+        // Batch get status for the visible page
+        $finalStatusMap = $this->feeService->batchGetStudentSummary($visibleStudentIds);
+
+        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) use ($finalStatusMap) {
+            $s = $finalStatusMap[$student->id] ?? ['total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0, 'status' => 'paid', 'last_payment_date' => null];
             return [
                 'id'                => $student->id,
                 'name'              => $student->user->name,
@@ -70,11 +100,6 @@ class FeeManagementController extends Controller
                 'status'            => $s['status'],
             ];
         });
-
-        // Apply status filter after batch (only affects in-memory page results)
-        if ($statusFilter !== 'all') {
-            $studentsWithStatus = $studentsWithStatus->filter(fn($s) => $s['status'] === $statusFilter)->values();
-        }
 
         return response()->json([
             'data'         => $studentsWithStatus->values()->all(),
