@@ -130,9 +130,43 @@ class FeeManagementService
             ->groupBy('student_id')
             ->pluck('last_payment_date', 'student_id');
 
+        // Check who is missing the current month
+        $currentYear = now()->year;
+        $currentMonth = now()->month;
+        
+        $hasCurrentMonth = DB::table('monthly_fee_plans')
+            ->whereIn('student_id', $studentIds)
+            ->where('year', $currentYear)
+            ->where('month', $currentMonth)
+            ->pluck('student_id')->toArray();
+            
+        $missingStudentIds = array_diff($studentIds, $hasCurrentMonth);
+        
+        // For missing students, get their latest plan amount
+        $latestPlanAmounts = [];
+        if (!empty($missingStudentIds)) {
+            // Get latest plan for each missing student using a subquery
+            $latestPlans = DB::table('monthly_fee_plans as m1')
+                ->select('m1.student_id', 'm1.payable_amount')
+                ->join(DB::raw('(SELECT student_id, MAX(year * 12 + month) as max_ym FROM monthly_fee_plans WHERE student_id IN (' . implode(',', $missingStudentIds) . ') GROUP BY student_id) as m2'), function($join) {
+                    $join->on('m1.student_id', '=', 'm2.student_id')
+                         ->on(DB::raw('m1.year * 12 + m1.month'), '=', 'm2.max_ym');
+                })
+                ->get()
+                ->pluck('payable_amount', 'student_id');
+                
+            $latestPlanAmounts = $latestPlans->toArray();
+        }
+
         $result = [];
         foreach ($studentIds as $sid) {
             $expected = (float) ($expectedRaw[$sid] ?? 0);
+            
+            // Add virtual current month amount if missing
+            if (in_array($sid, $missingStudentIds)) {
+                $expected += (float) ($latestPlanAmounts[$sid] ?? 0);
+            }
+            
             $paid     = (float) ($paidRaw[$sid] ?? 0);
             $pending  = $expected - $paid;
 
