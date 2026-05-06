@@ -310,6 +310,24 @@ class FeeManagementController extends Controller
     }
 
     /**
+     * Delete a payment
+     */
+    public function deletePayment($paymentId)
+    {
+        try {
+            $this->feeService->deletePayment($paymentId);
+            return response()->json([
+                'message' => 'Payment deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to delete payment',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Set class fee for year
      */
     public function setClassFee(Request $request)
