@@ -193,6 +193,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     // Payments
     Route::post('/fees/payments', [FeeManagementController::class, 'addPayment']);
     Route::post('/fees/payments/{paymentId}/receipt', [FeeManagementController::class, 'toggleReceipt']);
+    Route::delete('/fees/payments/{paymentId}', [FeeManagementController::class, 'deletePayment']);
     
     // Fee Plans
     Route::post('/fees/plans/class', [FeeManagementController::class, 'setClassFee']);
