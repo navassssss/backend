@@ -648,14 +648,16 @@ class FeeManagementService
         $totalPaid = 0;
 
         foreach ($students as $student) {
-            // Use the plan's expected amount, or fallback to the student's default monthly fee
-            $expected = (float) ($plans[$student->id] ?? $student->monthly_fee);
+            // Strictly rely on the database. No fallback for future or missing past months.
+            $expected = (float) ($plans[$student->id] ?? 0);
             $paid = (float) ($allocations[$student->id] ?? 0);
             
             $balance = max(0, $expected - $paid);
             
             $status = 'unpaid';
-            if ($balance <= 0 && $expected > 0) {
+            if ($expected == 0 && $paid == 0) {
+                $status = 'exempt';
+            } elseif ($balance <= 0 && $expected > 0) {
                 $status = 'paid';
             } elseif ($balance <= 0 && $expected == 0 && $paid > 0) {
                 $status = 'overpaid';
