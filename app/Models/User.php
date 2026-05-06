@@ -119,7 +119,7 @@ class User extends Authenticatable
 
     public function isPrincipal(): bool
     {
-        return in_array($this->role, ['principal', 'manager'])
+        return $this->role === 'principal'
             || ($this->role === 'teacher' && $this->is_vice_principal);
     }
 }

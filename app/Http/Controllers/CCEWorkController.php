@@ -21,7 +21,7 @@ class CCEWorkController extends Controller
             $query->whereHas('subject', function($q) use ($user) {
                 $q->where('teacher_id', $user->id);
             });
-        } elseif ($user->role !== 'principal' && $user->role !== 'manager') {
+        } elseif ($user->role !== 'principal') {
             // Non-principals/managers see nothing (shouldn't happen, but safe)
             return response()->json([]);
         }
