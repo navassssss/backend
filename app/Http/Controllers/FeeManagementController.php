@@ -468,6 +468,10 @@ class FeeManagementController extends Controller
     {
         $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
             ->whereDate('payment_date', $date)
+            ->where(function ($query) {
+                $query->whereNull('remarks')
+                      ->orWhere('remarks', '!=', 'Pre-paid bulk import starting Mar 2026');
+            })
             ->latest() // Order by most recent first
             ->get();
 
