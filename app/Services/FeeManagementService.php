@@ -545,6 +545,7 @@ class FeeManagementService
         DB::beginTransaction();
         try {
             $payment = FeePayment::findOrFail($paymentId);
+            $studentId = $payment->student_id;
             
             // Delete associated allocations explicitly just in case no cascading deletes
             FeePaymentAllocation::where('fee_payment_id', $paymentId)->delete();
@@ -552,10 +553,62 @@ class FeeManagementService
             // Delete the payment itself
             $payment->delete();
             
+            // Reallocate all remaining payments to fill any chronological gaps
+            $this->reallocateStudentPayments($studentId);
+            
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
+        }
+    }
+
+    /**
+     * Reallocate all payments for a student sequentially to eliminate gaps
+     */
+    public function reallocateStudentPayments(int $studentId): void
+    {
+        // 1. Delete all current allocations for this student
+        FeePaymentAllocation::where('student_id', $studentId)->delete();
+        
+        // 2. Fetch all payments in chronological order
+        $payments = FeePayment::where('student_id', $studentId)
+            ->orderBy('payment_date', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+            
+        // 3. Re-allocate each payment
+        foreach ($payments as $payment) {
+            $remaining = (float) $payment->paid_amount;
+            
+            // Re-fetch unpaid months for the current allocation state
+            $unpaidMonths = $this->getUnpaidMonths($studentId);
+            
+            foreach ($unpaidMonths as $monthData) {
+                if ($remaining <= 0) break;
+                
+                $balance = $monthData['balance'];
+                $allocateAmount = min($remaining, $balance);
+                
+                FeePaymentAllocation::create([
+                    'fee_payment_id' => $payment->id,
+                    'student_id' => $studentId,
+                    'year' => $monthData['year'],
+                    'month' => $monthData['month'],
+                    'allocated_amount' => $allocateAmount,
+                ]);
+                
+                $remaining -= $allocateAmount;
+            }
+            
+            // Handle overpayment
+            if ($remaining > 0) {
+                $this->allocateToFutureMonths(
+                    $studentId,
+                    $payment->id,
+                    $remaining
+                );
+            }
         }
     }
 }
