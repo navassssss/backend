@@ -21,6 +21,8 @@ class FeeManagementService
         ?string $remarks = null,
         bool $receiptIssued = false
     ): array {
+        $this->ensureFeePlans($studentId);
+
         DB::beginTransaction();
         
         try {
@@ -100,8 +102,8 @@ class FeeManagementService
     {
         if (empty($studentIds)) return [];
 
-        $limitYear  = $limitYear  ?? now()->addMonth()->year;
-        $limitMonth = $limitMonth ?? now()->addMonth()->month;
+        $limitYear  = $limitYear  ?? now()->year;
+        $limitMonth = $limitMonth ?? now()->month;
 
         // Single query: total expected per student up to limit date
         $expectedRaw = DB::table('monthly_fee_plans')
@@ -130,43 +132,9 @@ class FeeManagementService
             ->groupBy('student_id')
             ->pluck('last_payment_date', 'student_id');
 
-        // Check who is missing the current month
-        $currentYear = now()->year;
-        $currentMonth = now()->month;
-        
-        $hasCurrentMonth = DB::table('monthly_fee_plans')
-            ->whereIn('student_id', $studentIds)
-            ->where('year', $currentYear)
-            ->where('month', $currentMonth)
-            ->pluck('student_id')->toArray();
-            
-        $missingStudentIds = array_diff($studentIds, $hasCurrentMonth);
-        
-        // For missing students, get their latest plan amount
-        $latestPlanAmounts = [];
-        if (!empty($missingStudentIds)) {
-            // Get latest plan for each missing student using a subquery
-            $latestPlans = DB::table('monthly_fee_plans as m1')
-                ->select('m1.student_id', 'm1.payable_amount')
-                ->join(DB::raw('(SELECT student_id, MAX(year * 12 + month) as max_ym FROM monthly_fee_plans WHERE student_id IN (' . implode(',', $missingStudentIds) . ') GROUP BY student_id) as m2'), function($join) {
-                    $join->on('m1.student_id', '=', 'm2.student_id')
-                         ->on(DB::raw('m1.year * 12 + m1.month'), '=', 'm2.max_ym');
-                })
-                ->get()
-                ->pluck('payable_amount', 'student_id');
-                
-            $latestPlanAmounts = $latestPlans->toArray();
-        }
-
         $result = [];
         foreach ($studentIds as $sid) {
             $expected = (float) ($expectedRaw[$sid] ?? 0);
-            
-            // Add virtual current month amount if missing
-            if (in_array($sid, $missingStudentIds)) {
-                $expected += (float) ($latestPlanAmounts[$sid] ?? 0);
-            }
-            
             $paid     = (float) ($paidRaw[$sid] ?? 0);
             $pending  = $expected - $paid;
 
@@ -360,6 +328,73 @@ class FeeManagementService
     }
 
     /**
+     * Auto-generates missing fee plans up to the current month.
+     * Enforces Class 1 starting from May 2026.
+     */
+    public function ensureFeePlans(int $studentId): void
+    {
+        $student = Student::find($studentId);
+        if (!$student || $student->monthly_fee <= 0) {
+            return;
+        }
+
+        $currentDate = now();
+        $currentYear = $currentDate->year;
+        $currentMonth = $currentDate->month;
+
+        $latestPlan = MonthlyFeePlan::where('student_id', $studentId)
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->first();
+
+        $startYear = $currentYear;
+        $startMonth = $currentMonth;
+
+        if (!$latestPlan) {
+            // NO plans exist at all
+            if ($student->class_id == 1) { // Class 1 rule
+                $startYear = 2026;
+                $startMonth = 5;
+            }
+        } else {
+            // Plans exist, start from the month after latest
+            if ($latestPlan->year > $currentYear || ($latestPlan->year == $currentYear && $latestPlan->month >= $currentMonth)) {
+                return; // Already up to date
+            }
+            $startYear = $latestPlan->year;
+            $startMonth = $latestPlan->month + 1;
+            if ($startMonth > 12) {
+                $startMonth = 1;
+                $startYear++;
+            }
+        }
+
+        // Loop and create
+        $year = $startYear;
+        $month = $startMonth;
+        
+        while ($year < $currentYear || ($year == $currentYear && $month <= $currentMonth)) {
+            MonthlyFeePlan::firstOrCreate(
+                [
+                    'student_id' => $studentId,
+                    'year' => $year,
+                    'month' => $month,
+                ],
+                [
+                    'payable_amount' => $student->monthly_fee,
+                    'reason' => 'Auto-created missing monthly plan',
+                ]
+            );
+            
+            $month++;
+            if ($month > 12) {
+                $month = 1;
+                $year++;
+            }
+        }
+    }
+
+    /**
      * Set fee for a class for entire year
      */
     public function setClassFeeForYear(
@@ -426,6 +461,9 @@ class FeeManagementService
      */
     public function getStudentMonthlyStatus(int $studentId): array
     {
+        // Automatically create missing plans before displaying status
+        $this->ensureFeePlans($studentId);
+
         $plans = MonthlyFeePlan::where('student_id', $studentId)
             ->orderBy('year')
             ->orderBy('month')
@@ -454,57 +492,6 @@ class FeeManagementService
                 'balance' => max(0, $balance),
                 'status' => $monthStatus,
             ];
-        }
-        
-        // IMPORTANT: Ensure current month is always included
-        $currentYear = now()->year;
-        $currentMonth = now()->month;
-        
-        // Check if current month already exists in status
-        $currentMonthExists = collect($status)->contains(function ($item) use ($currentYear, $currentMonth) {
-            return $item['year'] == $currentYear && $item['month'] == $currentMonth;
-        });
-        
-        // If current month doesn't exist, add it with expected amount from latest fee plan
-        if (!$currentMonthExists) {
-            // Get the most recent fee plan to determine expected amount
-            $latestPlan = MonthlyFeePlan::where('student_id', $studentId)
-                ->orderBy('year', 'desc')
-                ->orderBy('month', 'desc')
-                ->first();
-            
-            // Use latest plan amount, or 0 if no plan exists
-            $expectedAmount = $latestPlan ? (float) $latestPlan->payable_amount : 0.0;
-            
-            // Check if there are any payments for current month
-            $currentMonthPaid = FeePaymentAllocation::where('student_id', $studentId)
-                ->where('year', $currentYear)
-                ->where('month', $currentMonth)
-                ->sum('allocated_amount');
-            
-            $balance = max(0, $expectedAmount - $currentMonthPaid);
-            
-            $monthStatus = 'unpaid';
-            if ($balance <= 0) $monthStatus = 'paid';
-            elseif ($currentMonthPaid > 0) $monthStatus = 'partial';
-            
-            $status[] = [
-                'year' => $currentYear,
-                'month' => $currentMonth,
-                'month_name' => date('F Y', mktime(0, 0, 0, $currentMonth, 1, $currentYear)),
-                'payable' => $expectedAmount,
-                'paid' => (float) $currentMonthPaid,
-                'balance' => $balance,
-                'status' => $monthStatus,
-            ];
-            
-            // Re-sort the status array by year and month
-            usort($status, function ($a, $b) {
-                if ($a['year'] != $b['year']) {
-                    return $a['year'] - $b['year'];
-                }
-                return $a['month'] - $b['month'];
-            });
         }
         
         return $status;

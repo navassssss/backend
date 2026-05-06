@@ -47,6 +47,11 @@ class FeeManagementController extends Controller
         // OPTIMIZATION: Paginate first, then batch-calculate status for only the visible page
         $paginatedStudents = $query->paginate($perPage, ['*'], 'page', $page);
         $studentIds = collect($paginatedStudents->items())->pluck('id')->toArray();
+        
+        // Ensure fee plans exist up to current month for the visible students
+        foreach ($studentIds as $id) {
+            $this->feeService->ensureFeePlans($id);
+        }
 
         // 3 SQL queries total for the entire page (regardless of page size)
         $statusMap = $this->feeService->batchGetStudentSummary($studentIds);
@@ -107,6 +112,11 @@ class FeeManagementController extends Controller
                 return response()->json(['paid' => 0, 'partial' => 0, 'due' => 0, 'overpaid' => 0]);
             }
 
+            // Ensure plans exist for all matching students before summary
+            foreach ($studentIds as $id) {
+                $this->feeService->ensureFeePlans($id);
+            }
+
             // Step 2: single batch summary (3 queries total)
             $summaries = $this->feeService->batchGetStudentSummary($studentIds);
 
@@ -138,14 +148,14 @@ class FeeManagementController extends Controller
         $status = $this->feeService->getStudentMonthlyStatus($studentId);
         
         // Filter to include:
-        // 1. All months up to NEXT month
-        // 2. Future months (after next month) that have payments
-        $limitDate = now()->addMonth();
+        // 1. All months up to CURRENT month
+        // 2. Future months (after current month) that have payments
+        $limitDate = now();
         $limitYear = $limitDate->year;
         $limitMonth = $limitDate->month;
 
         $statusUpToCurrent = collect($status)->filter(function ($month) use ($limitYear, $limitMonth) {
-            // Include if past or next month
+            // Include if past or current month
             if ($month['year'] < $limitYear) {
                 return true;
             }
@@ -161,7 +171,7 @@ class FeeManagementController extends Controller
             return false;
         })->values()->all();
         
-        // Calculate totals ONLY for past and next months
+        // Calculate totals ONLY for past and current months
         // We filter the already filtered list again to exclude future months from the sum
         $pastAndCurrentMonths = collect($statusUpToCurrent)->filter(function ($month) use ($limitYear, $limitMonth) {
             if ($month['year'] < $limitYear) {
