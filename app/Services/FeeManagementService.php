@@ -619,4 +619,73 @@ class FeeManagementService
             }
         }
     }
+
+    /**
+     * Get monthly student report
+     */
+    public function getMonthlyStudentReport(int $year, int $month): array
+    {
+        // 1. Fetch expected amounts from MonthlyFeePlan for this specific month
+        $plans = DB::table('monthly_fee_plans')
+            ->where('year', $year)
+            ->where('month', $month)
+            ->pluck('payable_amount', 'student_id');
+
+        // 2. Fetch paid amounts from FeePaymentAllocation for this specific month
+        // INCLUDING bulk imports
+        $allocations = DB::table('fee_payment_allocations')
+            ->where('year', $year)
+            ->where('month', $month)
+            ->select('student_id', DB::raw('SUM(allocated_amount) as total_allocated'))
+            ->groupBy('student_id')
+            ->pluck('total_allocated', 'student_id');
+
+        // 3. Fetch all active students
+        $students = Student::with(['user:id,name', 'class:id,name'])->get();
+
+        $reportStudents = [];
+        $totalExpected = 0;
+        $totalPaid = 0;
+
+        foreach ($students as $student) {
+            $expected = (float) ($plans[$student->id] ?? 0);
+            $paid = (float) ($allocations[$student->id] ?? 0);
+            
+            if ($expected > 0 || $paid > 0) {
+                $balance = max(0, $expected - $paid);
+                
+                $status = 'unpaid';
+                if ($balance <= 0 && $expected > 0) {
+                    $status = 'paid';
+                } elseif ($balance <= 0 && $expected == 0 && $paid > 0) {
+                    $status = 'overpaid';
+                } elseif ($paid > 0) {
+                    $status = 'partial';
+                }
+
+                $totalExpected += $expected;
+                $totalPaid += $paid;
+
+                $reportStudents[] = [
+                    'student_id' => $student->id,
+                    'roll_number' => $student->roll_number,
+                    'student_name' => $student->user->name ?? 'Unknown',
+                    'class_name' => $student->class->name ?? 'Unknown',
+                    'expected' => $expected,
+                    'paid' => $paid,
+                    'balance' => $balance,
+                    'status' => $status,
+                ];
+            }
+        }
+
+        return [
+            'year' => $year,
+            'month' => $month,
+            'total_expected' => $totalExpected,
+            'total_paid' => $totalPaid,
+            'total_pending' => max(0, $totalExpected - $totalPaid),
+            'students' => $reportStudents,
+        ];
+    }
 }

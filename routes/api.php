@@ -204,6 +204,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/fees/reports/summary', [FeeManagementController::class, 'getSummary']);
     Route::get('/fees/reports/class/{classId}', [FeeManagementController::class, 'getClassReport']);
     Route::get('/fees/reports/daily/{date}', [FeeManagementController::class, 'getDailyReport']);
+    Route::get('/fees/reports/monthly', [FeeManagementController::class, 'getMonthlyReport']);
     
     // Fee Utilities
     Route::get('/fees/classes', [FeeManagementController::class, 'getClasses']);
