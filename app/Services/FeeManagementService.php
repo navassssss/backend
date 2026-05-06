@@ -515,8 +515,11 @@ class FeeManagementService
               });
         })->sum('payable_amount');
         
-        // Total paid (all time)
-        $totalPaid = FeePaymentAllocation::sum('allocated_amount');
+        // Total paid (all time), excluding bulk imports
+        $totalPaid = FeePaymentAllocation::whereHas('payment', function ($query) {
+            $query->whereNull('remarks')
+                  ->orWhere('remarks', '!=', 'Pre-paid bulk import starting Mar 2026');
+        })->sum('allocated_amount');
         
         return [
             'total_expected' => (float) $totalExpected,
