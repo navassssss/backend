@@ -28,9 +28,9 @@ jobs:
             # Install/Update Dependencies
             composer install --no-dev --optimize-autoloader
             #check students
-            php check_gaps.php
+            # php check_gaps.php
             # Run Migrations
-            #php artisan migrate --force
+            php artisan migrate --force
 
             # Optimize Cache
             php artisan config:cache
