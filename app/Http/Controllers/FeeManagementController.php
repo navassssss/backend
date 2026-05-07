@@ -421,40 +421,38 @@ class FeeManagementController extends Controller
     /**
      * Get class-wise report — batch SQL aggregation, no per-student loop.
      */
-    public function getClassReport($classId)
+    public function getClassReport(Request $request, $classId)
     {
+        $year = $request->query('year');
+        $month = $request->query('month');
+        
         $class    = ClassRoom::findOrFail($classId);
         $students = Student::where('class_id', $classId)
             ->with('user:id,name')
-            ->select('id', 'user_id')
+            ->select('id', 'user_id', 'monthly_fee')
             ->get();
 
         $studentIds = $students->pluck('id')->toArray();
 
         // 3 queries total via batch — regardless of class size
-        $summaries = $this->feeService->batchGetStudentSummary($studentIds);
+        $summaries = $this->feeService->batchGetStudentSummary(
+            $studentIds, 
+            $year ? (int)$year : null, 
+            $month ? (int)$month : null
+        );
 
-        // Modal fee per student: most common payable_amount across their plans
-        $modalFees = \DB::table('monthly_fee_plans')
-            ->select('student_id', 'payable_amount', \DB::raw('COUNT(*) as freq'))
-            ->whereIn('student_id', $studentIds)
-            ->groupBy('student_id', 'payable_amount')
-            ->orderByDesc('freq')
-            ->get()
-            ->groupBy('student_id')
-            ->map(fn($rows) => (float) $rows->first()->payable_amount);
-
-        $report = $students->map(function ($student) use ($summaries, $modalFees) {
+        $report = $students->map(function ($student) use ($summaries) {
             $s = $summaries[$student->id] ?? [
                 'total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0,
             ];
             return [
                 'student_id'      => $student->id,
-                'student_name'    => $student->user->name,
-                'monthly_payable' => $modalFees[$student->id] ?? 0,
+                'student_name'    => $student->user->name ?? 'Unknown',
+                'monthly_payable' => (float) $student->monthly_fee,
                 'total_expected'  => $s['total_expected'],
                 'total_paid'      => $s['total_paid'],
-                'total_pending'   => $s['total_pending'],
+                // Display 0 if overpaid (negative pending)
+                'total_pending'   => max(0, $s['total_pending']),
             ];
         });
 
