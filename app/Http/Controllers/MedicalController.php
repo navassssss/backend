@@ -51,8 +51,18 @@ class MedicalController extends Controller
                 'reporter:id,name',
                 'recoveredBy:id,name',
                 'sentHomeBy:id,name',
-            ])
-            ->orderByDesc('reported_at');
+            ]);
+
+        $sort = $request->input('sort', 'reported_at');
+        if ($sort === 'resolved_at') {
+            $query->orderByRaw('COALESCE(recovered_at, sent_home_at) DESC');
+        } else {
+            $query->orderByDesc('reported_at');
+        }
+
+        if ($request->filled('status_filter') && in_array($request->status_filter, ['recovered', 'sent_home'])) {
+            $query->where('status', $request->status_filter);
+        }
 
         if ($request->filled('search')) {
             $s = $request->search;
@@ -168,6 +178,16 @@ class MedicalController extends Controller
         $this->authorize();
         $medical->load('student.user', 'student.classRoom', 'reporter', 'recoveredBy', 'sentHomeBy');
         return response()->json($this->format($medical));
+    }
+
+    /**
+     * Delete a medical record
+     */
+    public function destroy(MedicalRecord $medical)
+    {
+        $this->authorize();
+        $medical->delete();
+        return response()->json(['message' => 'Record deleted successfully']);
     }
 
     /* ── Private formatter ── */

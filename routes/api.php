@@ -138,6 +138,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/medical/{medical}/recover',      [MedicalController::class, 'recover']);
     Route::post('/medical/{medical}/sent-home',    [MedicalController::class, 'sentHome']);
     Route::patch('/medical/{medical}/toggle-doctor', [MedicalController::class, 'toggleDoctor']);
+    Route::delete('/medical/{medical}',            [MedicalController::class, 'destroy']);
 
     /**
      * ATTENDANCE ROUTES
