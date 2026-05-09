@@ -220,6 +220,8 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/outpasses', [App\Http\Controllers\OutpassController::class, 'index']);
     Route::post('/outpasses', [App\Http\Controllers\OutpassController::class, 'store']);
     Route::put('/outpasses/{outpass}/checkin', [App\Http\Controllers\OutpassController::class, 'checkin']);
+    Route::put('/outpasses/{outpass}/revert', [App\Http\Controllers\OutpassController::class, 'revertCheckin']);
+    Route::delete('/outpasses/{outpass}', [App\Http\Controllers\OutpassController::class, 'destroy']);
 });
 
 /**
