@@ -61,7 +61,11 @@ class MedicalController extends Controller
         }
 
         if ($request->filled('status_filter') && in_array($request->status_filter, ['recovered', 'sent_home'])) {
-            $query->where('status', $request->status_filter);
+            if ($request->status_filter === 'recovered') {
+                $query->whereNotNull('recovered_at');
+            } else {
+                $query->whereNotNull('sent_home_at');
+            }
         }
 
         if ($request->filled('search')) {
