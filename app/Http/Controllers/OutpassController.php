@@ -86,4 +86,29 @@ class OutpassController extends Controller
             'outpass' => $outpass->load(['student.user', 'student.classRoom', 'creator']),
         ]);
     }
+
+    public function revertCheckin(Outpass $outpass): JsonResponse
+    {
+        if ($outpass->actual_in_time === null) {
+            return response()->json(['message' => 'Student has not been checked in yet.'], 422);
+        }
+
+        $outpass->update([
+            'actual_in_time' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Check-in reverted successfully',
+            'outpass' => $outpass->load(['student.user', 'student.classRoom', 'creator']),
+        ]);
+    }
+
+    public function destroy(Outpass $outpass): JsonResponse
+    {
+        $outpass->delete();
+
+        return response()->json([
+            'message' => 'Outpass deleted successfully',
+        ]);
+    }
 }
