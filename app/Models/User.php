@@ -22,6 +22,8 @@ class User extends Authenticatable
     protected $guarded = [
     ];
 
+    protected $appends = ['abilities'];
+
     public function duties()
     {
         return $this->belongsToMany(Duty::class, 'duty_teacher', 'teacher_id', 'duty_id')
@@ -56,6 +58,7 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'username',
         'email',
         'password',
         'role',
@@ -121,5 +124,28 @@ class User extends Authenticatable
     {
         return $this->role === 'principal'
             || ($this->role === 'teacher' && $this->is_vice_principal);
+    }
+
+    /**
+     * Frontend synchronized abilities
+     */
+    protected function abilities(): \Illuminate\Database\Eloquent\Casts\Attribute
+    {
+        return \Illuminate\Database\Eloquent\Casts\Attribute::make(
+            get: fn () => [
+                'students.manage'       => $this->can('create', Student::class),
+                'fees.manage'           => $this->can('create', \App\Models\FeePayment::class),
+                'subjects.manage'       => $this->can('create', \App\Models\Subject::class),
+                'outpasses.manage'      => $this->can('create', \App\Models\Outpass::class),
+                'medical.manage'        => $this->can('create', \App\Models\MedicalRecord::class),
+                'cce.manage'            => $this->can('create', \App\Models\CCEWork::class),
+                'announcements.manage'  => $this->can('create', \App\Models\Announcement::class),
+                'duties.manage'         => $this->can('create', \App\Models\Duty::class),
+                'tasks.manage'          => $this->can('create', \App\Models\Task::class),
+                'reports.review'        => $this->isPrincipal(),
+                'achievements.review'   => $this->hasPermission('review_achievements'),
+                'issues.manage'         => $this->isPrincipal() || $this->role === 'manager',
+            ]
+        );
     }
 }
