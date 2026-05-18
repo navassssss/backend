@@ -143,6 +143,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     /**
      * ATTENDANCE ROUTES
      */
+    Route::get('/attendance/reports/operational', [App\Http\Controllers\AttendanceController::class, 'operationalReport']);
     Route::get('/attendance', [App\Http\Controllers\AttendanceController::class, 'index']);
     Route::post('/attendance', [App\Http\Controllers\AttendanceController::class, 'store']);
     Route::post('/attendance/check', [App\Http\Controllers\AttendanceController::class, 'check']);
