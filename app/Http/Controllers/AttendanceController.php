@@ -6,6 +6,8 @@ use App\Models\Attendance;
 use App\Models\AttendanceRecord;
 use App\Models\ClassRoom;
 use App\Models\Student;
+use App\Models\Outpass;
+use App\Models\MedicalRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -181,5 +183,115 @@ class AttendanceController extends Controller
             ]);
 
         return response()->json($students);
+    }
+
+    // Operational Report for Principals
+    public function operationalReport(Request $request)
+    {
+        $sessionParam = $request->query('session', date('H') >= 13 ? 'AN' : 'FN');
+        $session = $sessionParam === 'AN' ? 'afternoon' : 'morning';
+        $date = $request->query('date', date('Y-m-d'));
+
+        $totalStudents = Student::academic()->count();
+
+        $attendances = Attendance::with(['records.student.user', 'records.student.classRoom'])
+            ->where('date', $date)
+            ->get();
+
+        $morningRecords = $attendances->where('session', 'morning')->flatMap->records;
+        $afternoonRecords = $attendances->where('session', 'afternoon')->flatMap->records;
+
+        $fnAttendanceCount = $morningRecords->where('status', 'present')->count();
+        $anAttendanceCount = $afternoonRecords->where('status', 'present')->count();
+
+        $activeOutpasses = Outpass::with(['student.classRoom', 'student.user'])
+            ->whereDate('out_time', $date)
+            ->get();
+            
+        $medicalCases = MedicalRecord::with(['student.classRoom', 'student.user'])
+            ->whereDate('reported_at', $date)
+            ->get();
+
+        $sessionRecords = $session === 'morning' ? $morningRecords : $afternoonRecords;
+        
+        $absentRecords = $sessionRecords->where('status', 'absent');
+        
+        $outpassStudentIds = $activeOutpasses->pluck('student_id')->toArray();
+        $medicalStudentIds = $medicalCases->pluck('student_id')->toArray();
+
+        $unexplainedAbsentCount = 0;
+        $classAttendanceMap = [];
+
+        foreach ($absentRecords as $record) {
+            $student = $record->student;
+            if (!$student) continue;
+
+            $isOutpass = in_array($student->id, $outpassStudentIds);
+            $isMedical = in_array($student->id, $medicalStudentIds);
+
+            if (!$isOutpass && !$isMedical) {
+                $unexplainedAbsentCount++;
+                $marker = 'A';
+            } else if ($isMedical) {
+                $marker = 'M';
+            } else {
+                $marker = 'O';
+            }
+
+            $classId = $student->class_id;
+            $className = $student->classRoom ? $student->classRoom->name : 'Unknown';
+
+            if (!isset($classAttendanceMap[$classId])) {
+                $classAttendanceMap[$classId] = [
+                    'classId' => $classId,
+                    'className' => $className,
+                    'absentCount' => 0,
+                    'students' => []
+                ];
+            }
+
+            $classAttendanceMap[$classId]['absentCount']++;
+            $classAttendanceMap[$classId]['students'][] = [
+                'id' => $student->id,
+                'name' => $student->user ? $student->user->name : 'Unknown',
+                'marker' => $marker
+            ];
+        }
+
+        $officialAbsences = [];
+        $idCounter = 1;
+
+        foreach ($medicalCases as $case) {
+            $officialAbsences[] = [
+                'id' => $idCounter++,
+                'class' => $case->student->classRoom ? $case->student->classRoom->name : '-',
+                'student' => $case->student->user ? $case->student->user->name : '-',
+                'reason' => 'Medical',
+                'time' => $case->reported_at ? $case->reported_at->format('h:i A') : '-'
+            ];
+        }
+
+        foreach ($activeOutpasses as $pass) {
+            $officialAbsences[] = [
+                'id' => $idCounter++,
+                'class' => $pass->student->classRoom ? $pass->student->classRoom->name : '-',
+                'student' => $pass->student->user ? $pass->student->user->name : '-',
+                'reason' => 'Outpass',
+                'time' => $pass->out_time ? $pass->out_time->format('h:i A') : '-'
+            ];
+        }
+
+        return response()->json([
+            'summary' => [
+                'totalStudents' => $totalStudents,
+                'fnAttendance' => $fnAttendanceCount,
+                'anAttendance' => $anAttendanceCount,
+                'activeOutpasses' => $activeOutpasses->count(),
+                'medicalCases' => $medicalCases->count(),
+                'unexplainedAbsent' => $unexplainedAbsentCount
+            ],
+            'officialAbsences' => collect($officialAbsences)->sortByDesc('time')->values()->all(),
+            'classAttendance' => collect(array_values($classAttendanceMap))->sortBy('className')->values()->all()
+        ]);
     }
 }
