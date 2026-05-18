@@ -255,13 +255,13 @@ class AttendanceController extends Controller
             $isOutpass = in_array($student->id, $outpassStudentIds);
             $isMedical = in_array($student->id, $medicalStudentIds);
 
-            if (!$isOutpass && !$isMedical) {
-                $unexplainedAbsentCount++;
-                $marker = 'A';
+            if ($isOutpass) {
+                $marker = 'O';
             } else if ($isMedical) {
                 $marker = 'M';
             } else {
-                $marker = 'O';
+                $unexplainedAbsentCount++;
+                $marker = 'A';
             }
 
             $classId = $student->class_id;
@@ -288,10 +288,12 @@ class AttendanceController extends Controller
         $idCounter = 1;
 
         foreach ($medicalCases as $case) {
-            $timeStr = $case->reported_at ? $case->reported_at->format('h:i A') : '-';
-            if ($case->recovered_at) {
-                $timeStr = 'Recovered ' . Carbon::parse($case->recovered_at)->format('h:i A');
-            }
+            // If they also have an outpass, the Outpass module takes precedence
+            if (in_array($case->student_id, $outpassStudentIds)) continue;
+
+            $timeStr = $case->recovered_at 
+                ? 'Recovered ' . Carbon::parse($case->recovered_at)->format('h:i A') 
+                : 'Still in Medical';
 
             $officialAbsences[] = [
                 'id' => $idCounter++,
@@ -303,10 +305,9 @@ class AttendanceController extends Controller
         }
 
         foreach ($activeOutpasses as $pass) {
-            $timeStr = $pass->out_time ? Carbon::parse($pass->out_time)->format('h:i A') : '-';
-            if ($pass->actual_in_time) {
-                $timeStr = 'Returned ' . Carbon::parse($pass->actual_in_time)->format('h:i A');
-            }
+            $timeStr = $pass->actual_in_time 
+                ? 'Returned ' . Carbon::parse($pass->actual_in_time)->format('h:i A') 
+                : 'Still Outside';
 
             $officialAbsences[] = [
                 'id' => $idCounter++,
