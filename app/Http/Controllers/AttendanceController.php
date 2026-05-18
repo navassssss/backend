@@ -10,6 +10,7 @@ use App\Models\Outpass;
 use App\Models\MedicalRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class AttendanceController extends Controller
 {
@@ -204,13 +205,38 @@ class AttendanceController extends Controller
         $fnAttendanceCount = $morningRecords->where('status', 'present')->count();
         $anAttendanceCount = $afternoonRecords->where('status', 'present')->count();
 
-        $activeOutpasses = Outpass::with(['student.classRoom', 'student.user'])
-            ->whereDate('out_time', $date)
+        $cutoffTime = $session === 'morning' 
+            ? Carbon::parse($date . ' 07:45:00') 
+            : Carbon::parse($date . ' 14:00:00');
+
+        $allOutpasses = Outpass::with(['student.classRoom', 'student.user'])
+            ->whereDate('out_time', '<=', $date)
+            ->where(function ($query) use ($date) {
+                $query->whereNull('actual_in_time')
+                      ->orWhereDate('actual_in_time', '>=', $date);
+            })
             ->get();
+
+        $activeOutpasses = $allOutpasses->filter(function ($pass) use ($cutoffTime) {
+            if (is_null($pass->actual_in_time)) return true;
+            if (Carbon::parse($pass->actual_in_time)->lte($cutoffTime)) return false;
+            return true;
+        });
             
-        $medicalCases = MedicalRecord::with(['student.classRoom', 'student.user'])
-            ->whereDate('reported_at', $date)
+        $allMedicalCases = MedicalRecord::with(['student.classRoom', 'student.user'])
+            ->whereDate('reported_at', '<=', $date)
+            ->whereNull('sent_home_at') // Ignore sent home, outpass handles them
+            ->where(function ($query) use ($date) {
+                $query->whereNull('recovered_at')
+                      ->orWhereDate('recovered_at', '>=', $date);
+            })
             ->get();
+
+        $medicalCases = $allMedicalCases->filter(function ($med) use ($cutoffTime) {
+            if (is_null($med->recovered_at)) return true;
+            if (Carbon::parse($med->recovered_at)->lte($cutoffTime)) return false;
+            return true;
+        });
 
         $sessionRecords = $session === 'morning' ? $morningRecords : $afternoonRecords;
         
@@ -262,22 +288,32 @@ class AttendanceController extends Controller
         $idCounter = 1;
 
         foreach ($medicalCases as $case) {
+            $timeStr = $case->reported_at ? $case->reported_at->format('h:i A') : '-';
+            if ($case->recovered_at) {
+                $timeStr = 'Recovered ' . Carbon::parse($case->recovered_at)->format('h:i A');
+            }
+
             $officialAbsences[] = [
                 'id' => $idCounter++,
                 'class' => $case->student->classRoom ? $case->student->classRoom->name : '-',
                 'student' => $case->student->user ? $case->student->user->name : '-',
                 'reason' => 'Medical',
-                'time' => $case->reported_at ? $case->reported_at->format('h:i A') : '-'
+                'time' => $timeStr
             ];
         }
 
         foreach ($activeOutpasses as $pass) {
+            $timeStr = $pass->out_time ? Carbon::parse($pass->out_time)->format('h:i A') : '-';
+            if ($pass->actual_in_time) {
+                $timeStr = 'Returned ' . Carbon::parse($pass->actual_in_time)->format('h:i A');
+            }
+
             $officialAbsences[] = [
                 'id' => $idCounter++,
                 'class' => $pass->student->classRoom ? $pass->student->classRoom->name : '-',
                 'student' => $pass->student->user ? $pass->student->user->name : '-',
                 'reason' => 'Outpass',
-                'time' => $pass->out_time ? $pass->out_time->format('h:i A') : '-'
+                'time' => $timeStr
             ];
         }
 
