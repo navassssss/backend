@@ -44,4 +44,19 @@ class CCEWork extends Model
     {
         return $this->hasMany(CCESubmission::class, 'work_id');
     }
+
+    public function scopeVisibleTo($query, $user)
+    {
+        if ($user->isPrincipal() || $user->hasPermission('manage_cce')) {
+            return $query;
+        }
+
+        if ($user->isTeacher()) {
+            return $query->whereHas('subject', function($q) use ($user) {
+                $q->where('teacher_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
 }

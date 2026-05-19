@@ -14,6 +14,7 @@ class CCESubmissionController extends Controller
     public function evaluate(Request $request, $id)
     {
         $submission = CCESubmission::findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('evaluate', $submission->work);
 
         $validated = $request->validate([
             'marks_obtained' => 'required|numeric|min:0|max:' . $submission->work->max_marks,
@@ -51,6 +52,8 @@ class CCESubmissionController extends Controller
         if ($submissions->isEmpty()) {
             return response()->json(['message' => 'No valid submissions found'], 422);
         }
+
+        \Illuminate\Support\Facades\Gate::authorize('evaluate', $submissions->first()->work);
 
         $maxMarks = $submissions->first()->work->max_marks;
 
