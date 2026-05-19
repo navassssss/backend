@@ -13,19 +13,9 @@ class CCEWorkController extends Controller
     {
         $user = $request->user();
         $query = CCEWork::with(['subject.classRoom', 'subject.teacher'])
-            ->whereHas('subject');
+            ->whereHas('subject')
+            ->visibleTo($user);
 
-        // Role-based filtering
-        if ($user->role === 'teacher') {
-            // Teachers see only works for subjects they teach
-            $query->whereHas('subject', function($q) use ($user) {
-                $q->where('teacher_id', $user->id);
-            });
-        } elseif ($user->role !== 'principal') {
-            // Non-principals/managers see nothing (shouldn't happen, but safe)
-            return response()->json([]);
-        }
-        // Principals/managers see all works (no filter)
 
         // Additional filters from request
         if ($request->has('subject_id')) {
@@ -110,6 +100,7 @@ class CCEWorkController extends Controller
 
     public function store(Request $request)
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', CCEWork::class);
         $validated = $request->validate([
             'subject_id'      => 'required|exists:subjects,id',
             'level'           => 'required|integer|min:1|max:4',
@@ -159,6 +150,7 @@ class CCEWorkController extends Controller
     public function show($id)
     {
         $work = CCEWork::with(['subject.classRoom', 'submissions.student.user'])->findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('view', $work);
 
         return response()->json([
             'id' => $work->id,
@@ -193,6 +185,7 @@ class CCEWorkController extends Controller
     public function update(Request $request, $id)
     {
         $work = CCEWork::findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('update', $work);
 
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
@@ -213,6 +206,7 @@ class CCEWorkController extends Controller
     public function destroy($id)
     {
         $work = CCEWork::findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('delete', $work);
         $work->delete();
 
         return response()->json([
