@@ -148,13 +148,14 @@ class AttendanceController extends Controller
         $attendance = Attendance::with([
             'classRoom:id,name',
             'marker:id,name',
-            'records:id,attendance_id,student_id,status',
+            'records:id,attendance_id,student_id,status,remarks',
             'records.student:id,user_id,roll_number,name',
         ])->findOrFail($id);
 
         return response()->json([
             'id'          => $attendance->id,
             'className'   => $attendance->classRoom?->name,
+            'classId'     => $attendance->class_id,
             'session'     => $attendance->session,
             'date'        => $attendance->date,
             'teacherName' => $attendance->marker?->name,
@@ -163,8 +164,62 @@ class AttendanceController extends Controller
                 'studentName' => $r->student?->name ?? $r->student?->user?->name,
                 'rollNumber'  => $r->student?->roll_number,
                 'status'      => $r->status,
+                'reason'      => $r->remarks,
             ]),
         ]);
+    }
+
+    // Update existing attendance submission
+    public function update(Request $request, $id)
+    {
+        $attendance = Attendance::findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('update', $attendance);
+
+        $validated = $request->validate([
+            'absent_students' => 'present|array',
+            'absent_students.*.id' => 'required|exists:students,id',
+            'absent_students.*.reason' => 'nullable|string|max:255',
+        ]);
+
+        DB::transaction(function () use ($attendance, $validated) {
+            // Get all students for this class
+            $students = Student::where('class_id', $attendance->class_id)->academic()->pluck('id');
+            $absentSet = collect($validated['absent_students'])->keyBy('id');
+
+            // Delete old records
+            AttendanceRecord::where('attendance_id', $attendance->id)->delete();
+
+            // Re-insert clean state based on new payload
+            $rows = $students->map(function ($sid) use ($attendance, $absentSet) {
+                $isAbsent = $absentSet->has($sid);
+                return [
+                    'attendance_id' => $attendance->id,
+                    'student_id'    => $sid,
+                    'status'        => $isAbsent ? 'absent' : 'present',
+                    'remarks'       => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
+                    'created_at'    => $attendance->created_at,
+                    'updated_at'    => now(),
+                ];
+            })->all();
+
+            AttendanceRecord::insert($rows);
+        });
+
+        return response()->json(['message' => 'Attendance updated successfully']);
+    }
+
+    // Delete an entire attendance submission
+    public function destroy($id)
+    {
+        $attendance = Attendance::findOrFail($id);
+        \Illuminate\Support\Facades\Gate::authorize('delete', $attendance);
+
+        DB::transaction(function () use ($attendance) {
+            AttendanceRecord::where('attendance_id', $attendance->id)->delete();
+            $attendance->delete();
+        });
+
+        return response()->json(['message' => 'Attendance record deleted successfully']);
     }
 
     // Get all classes for dropdown — withCount replaces per-class count() query
