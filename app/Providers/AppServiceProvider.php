@@ -18,6 +18,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\MedicalRecord::class, \App\Policies\MedicalPolicy::class);
+
         \Illuminate\Support\Facades\Gate::define('viewWebTinker', function ($user = null) {
             // WARNING: For production, you MUST change this to a secure check!
             // e.g., return $user && $user->email === 'your-email@example.com';
