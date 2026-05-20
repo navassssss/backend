@@ -14,10 +14,7 @@ class AchievementSettingsController extends Controller
      */
     public function index(Request $request)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        \Illuminate\Support\Facades\Gate::authorize('manageSettings', App\Models\Achievement::class);
 
         $categories     = Cache::remember('achievement:categories', now()->addHours(24), function () {
             return AchievementCategory::orderBy('name')->get();
@@ -35,10 +32,7 @@ class AchievementSettingsController extends Controller
      */
     public function storeCategory(Request $request)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        \Illuminate\Support\Facades\Gate::authorize('manageSettings', App\Models\Achievement::class);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -64,10 +58,7 @@ class AchievementSettingsController extends Controller
      */
     public function updateCategory(Request $request, $id)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        \Illuminate\Support\Facades\Gate::authorize('manageSettings', App\Models\Achievement::class);
 
         $category = AchievementCategory::findOrFail($id);
 
@@ -95,10 +86,7 @@ class AchievementSettingsController extends Controller
      */
     public function destroyCategory(Request $request, $id)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        \Illuminate\Support\Facades\Gate::authorize('manageSettings', App\Models\Achievement::class);
 
         $category = AchievementCategory::findOrFail($id);
         
@@ -120,10 +108,7 @@ class AchievementSettingsController extends Controller
      */
     public function updateThresholds(Request $request)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        \Illuminate\Support\Facades\Gate::authorize('manageSettings', App\Models\Achievement::class);
 
         $validated = $request->validate([
             'thresholds' => 'required|array', // e.g. ["1" => 20, "2" => 50]
