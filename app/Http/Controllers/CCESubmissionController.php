@@ -6,6 +6,7 @@ use App\Models\CCESubmission;
 use App\Models\CCEWork;
 use App\Models\Student;
 use Illuminate\Http\Request;
+use App\Http\Requests\BulkEvaluateSubmissionRequest;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 
@@ -35,14 +36,9 @@ class CCESubmissionController extends Controller
         ]);
     }
 
-    public function bulkEvaluate(Request $request)
+    public function bulkEvaluate(BulkEvaluateSubmissionRequest $request)
     {
-        $validated = $request->validate([
-            'submission_ids'   => 'required|array|min:1',
-            'submission_ids.*' => 'integer|exists:cce_submissions,id',
-            'marks_obtained'   => 'required|numeric|min:0',
-            'feedback'         => 'nullable|string|max:1000',
-        ]);
+        $validated = $request->validated();
 
         // Verify all submissions belong to the same work and marks don't exceed max
         $submissions = CCESubmission::with('work')
@@ -52,8 +48,6 @@ class CCESubmissionController extends Controller
         if ($submissions->isEmpty()) {
             return response()->json(['message' => 'No valid submissions found'], 422);
         }
-
-        \Illuminate\Support\Facades\Gate::authorize('evaluate', $submissions->first()->work);
 
         $maxMarks = $submissions->first()->work->max_marks;
 
@@ -146,6 +140,10 @@ class CCESubmissionController extends Controller
 
         if ($submission->student_id !== $student->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($submission->status === 'evaluated') {
+            return response()->json(['error' => 'Cannot modify a submission that has already been evaluated.'], 403);
         }
 
         $validated = $request->validate([
