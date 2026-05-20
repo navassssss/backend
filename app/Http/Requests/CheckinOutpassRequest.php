@@ -11,7 +11,7 @@ class CheckinOutpassRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()->isPrincipal() || $this->user()->hasPermission('manage_outpasses');
+        return true;
     }
 
     /**

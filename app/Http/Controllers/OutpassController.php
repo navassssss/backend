@@ -12,6 +12,8 @@ class OutpassController extends Controller
 {
     public function dashboard(): JsonResponse
     {
+        \Illuminate\Support\Facades\Gate::authorize('viewAny', \App\Models\Outpass::class);
+
         // Single query per stat — fast counts via DB indexes
         return response()->json([
             'total_today'       => Outpass::whereDate('out_time', today())->count(),
@@ -23,6 +25,8 @@ class OutpassController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        \Illuminate\Support\Facades\Gate::authorize('viewAny', \App\Models\Outpass::class);
+
         $query = Outpass::with([
                 'student:id,user_id,class_id,roll_number',
                 'student.user:id,name',
@@ -59,10 +63,15 @@ class OutpassController extends Controller
 
     public function store(StoreOutpassRequest $request): JsonResponse
     {
-        $outpass = Outpass::create([
-            ...$request->validated(),
-            'created_by' => $request->user()->id,
-        ]);
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Outpass::class);
+
+        if (\App\Models\Outpass::where('student_id', $request->student_id)->outside()->exists()) {
+            return response()->json(['message' => 'Student already has an active outpass.'], 422);
+        }
+
+        $outpass = new Outpass($request->validated());
+        $outpass->created_by = $request->user()->id;
+        $outpass->save();
 
         return response()->json([
             'message' => 'Outpass created successfully',
@@ -72,6 +81,8 @@ class OutpassController extends Controller
 
     public function checkin(Outpass $outpass, CheckinOutpassRequest $request): JsonResponse
     {
+        \Illuminate\Support\Facades\Gate::authorize('update', $outpass);
+
         // Guard: prevent double check-in
         if ($outpass->actual_in_time !== null) {
             return response()->json(['message' => 'Student has already been checked in.'], 422);
@@ -89,6 +100,8 @@ class OutpassController extends Controller
 
     public function revertCheckin(Outpass $outpass): JsonResponse
     {
+        \Illuminate\Support\Facades\Gate::authorize('update', $outpass);
+
         if ($outpass->actual_in_time === null) {
             return response()->json(['message' => 'Student has not been checked in yet.'], 422);
         }
@@ -105,6 +118,8 @@ class OutpassController extends Controller
 
     public function destroy(Outpass $outpass): JsonResponse
     {
+        \Illuminate\Support\Facades\Gate::authorize('delete', $outpass);
+
         $outpass->delete();
 
         return response()->json([
