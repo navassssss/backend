@@ -38,6 +38,7 @@ return new class extends Migration
             ['name' => 'manage_duties', 'label' => 'Manage Duties', 'module' => 'Administration'],
             ['name' => 'manage_tasks', 'label' => 'Manage Tasks', 'module' => 'Administration'],
             ['name' => 'review_achievements', 'label' => 'Review Achievements', 'module' => 'Academics'],
+            ['name' => 'manage_attendance', 'label' => 'Manage Attendance', 'module' => 'Academics'],
         ];
 
         DB::table('permissions')->insert(array_map(function ($p) {

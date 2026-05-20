@@ -149,7 +149,8 @@ class AttendanceController extends Controller
             'classRoom:id,name',
             'marker:id,name',
             'records:id,attendance_id,student_id,status,remarks',
-            'records.student:id,user_id,roll_number,name',
+            'records.student:id,user_id,roll_number',
+            'records.student.user:id,name',
         ])->findOrFail($id);
 
         return response()->json([
