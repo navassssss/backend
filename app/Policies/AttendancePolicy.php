@@ -36,4 +36,14 @@ class AttendancePolicy
     {
         return $user->hasPermission('view_operational_report');
     }
+
+    public function update(User $user, Attendance $attendance)
+    {
+        return $user->hasPermission('manage_attendance');
+    }
+
+    public function delete(User $user, Attendance $attendance)
+    {
+        return $user->hasPermission('manage_attendance');
+    }
 }

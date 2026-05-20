@@ -150,6 +150,8 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     // Specific routes must come before dynamic routes
     Route::get('/attendance/classes', [App\Http\Controllers\AttendanceController::class, 'classes']);
     Route::get('/attendance/{id}', [App\Http\Controllers\AttendanceController::class, 'show']);
+    Route::put('/attendance/{id}', [App\Http\Controllers\AttendanceController::class, 'update']);
+    Route::delete('/attendance/{id}', [App\Http\Controllers\AttendanceController::class, 'destroy']);
     // Route::get('/classes', [App\Http\Controllers\AttendanceController::class, 'classes']); // Commented out - conflicts with ClassRoomController
     Route::get('/classes/{classId}/students', [App\Http\Controllers\AttendanceController::class, 'students']);
 
