@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Events\AchievementApproved;
+use App\Events\AchievementRevoked;
 use App\Models\Achievement;
 use App\Models\AchievementCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class AchievementController extends Controller
 {
@@ -66,7 +68,7 @@ class AchievementController extends Controller
             'achievement_category_id' => 'required|exists:achievement_categories,id',
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'attachments' => 'nullable|array',
+            'attachments' => 'nullable|array|max:3',
             'attachments.*' => 'file|max:10240', // 10MB max per file
         ]);
 
@@ -85,11 +87,15 @@ class AchievementController extends Controller
         // Handle file uploads
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {
-                $path = $file->store('achievements', 'public');
+                $cleanName = Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
+                $extension = $file->getClientOriginalExtension();
+                $safeFileName = Str::limit($cleanName, 40, '') . '-' . uniqid() . '.' . $extension;
+
+                $path = $file->storeAs('achievements', $safeFileName, 'public');
 
                 $achievement->attachments()->create([
                     'file_path' => $path,
-                    'file_name' => $file->getClientOriginalName(),
+                    'file_name' => $file->getClientOriginalName(), // preserve original for display
                     'mime_type' => $file->getMimeType(),
                 ]);
             }
@@ -103,9 +109,10 @@ class AchievementController extends Controller
      */
     public function approve(Request $request, Achievement $achievement)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        \Illuminate\Support\Facades\Gate::authorize('review', Achievement::class);
+
+        if ($achievement->status === 'approved') {
+            return response()->json(['message' => 'Achievement is already approved.'], 422);
         }
 
         $request->validate([
@@ -130,10 +137,13 @@ class AchievementController extends Controller
      */
     public function reject(Request $request, Achievement $achievement)
     {
-        $user = $request->user();
-        if (!$user->hasPermission('review_achievements')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        \Illuminate\Support\Facades\Gate::authorize('review', Achievement::class);
+
+        if ($achievement->status === 'rejected') {
+            return response()->json(['message' => 'Achievement is already rejected.'], 422);
         }
+
+        $wasApproved = $achievement->status === 'approved';
 
         $validated = $request->validate([
             'review_note' => 'required|string',
@@ -145,6 +155,10 @@ class AchievementController extends Controller
             'approved_at' => now(),
             'review_note' => $validated['review_note'],
         ]);
+
+        if ($wasApproved) {
+            event(new AchievementRevoked($achievement->fresh(['student.class', 'category'])));
+        }
 
         return response()->json($achievement);
     }

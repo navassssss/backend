@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Events\AchievementApproved;
+use App\Events\AchievementRevoked;
 use App\Listeners\UpdatePointsOnAchievementApproval;
+use App\Listeners\RevokePointsOnAchievementRejection;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 
 class EventServiceProvider extends ServiceProvider
@@ -14,8 +16,12 @@ class EventServiceProvider extends ServiceProvider
      * @var array<class-string, array<int, class-string>>
      */
     protected $listen = [
-        // Laravel auto-discovers listeners based on handle() method type hints
-        // No manual registration needed for AchievementApproved
+        \App\Events\AchievementApproved::class => [
+            \App\Listeners\UpdatePointsOnAchievementApproval::class,
+        ],
+        \App\Events\AchievementRevoked::class => [
+            \App\Listeners\RevokePointsOnAchievementRejection::class,
+        ],
         \Illuminate\Notifications\Events\NotificationSent::class => [
             \App\Listeners\InvalidateNotificationCache::class,
         ],
