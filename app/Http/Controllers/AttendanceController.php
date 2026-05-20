@@ -17,6 +17,8 @@ class AttendanceController extends Controller
     // Check if attendance exists for class-date-session
     public function check(Request $request)
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Attendance::class);
+
         $exists = Attendance::where('class_id', $request->class_id)
             ->where('date', $request->date)
             ->where('session', $request->session)
@@ -28,6 +30,8 @@ class AttendanceController extends Controller
     // Submit attendance records
     public function store(Request $request)
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Attendance::class);
+
         $validated = $request->validate([
             'class_id'        => 'required|exists:class_rooms,id',
             'date'            => 'required|date',
@@ -36,6 +40,13 @@ class AttendanceController extends Controller
             'absent_students.*.id' => 'required|exists:students,id',
             'absent_students.*.reason' => 'nullable|string|max:255',
         ]);
+
+        if (Attendance::where('class_id', $validated['class_id'])
+            ->where('date', $validated['date'])
+            ->where('session', $validated['session'])
+            ->exists()) {
+            return response()->json(['message' => 'Attendance already submitted for this session'], 422);
+        }
 
         DB::transaction(function () use ($validated, $request) {
             $attendance = Attendance::create([
@@ -70,6 +81,8 @@ class AttendanceController extends Controller
     // List attendance for a given date
     public function index(Request $request)
     {
+        \Illuminate\Support\Facades\Gate::authorize('viewAny', \App\Models\Attendance::class);
+
         $date = $request->query('date', date('Y-m-d'));
 
         // Load everything with eager loading — no extra queries inside map()
@@ -130,6 +143,8 @@ class AttendanceController extends Controller
     // Get specific attendance details
     public function show($id)
     {
+        \Illuminate\Support\Facades\Gate::authorize('view', \App\Models\Attendance::class);
+
         $attendance = Attendance::with([
             'classRoom:id,name',
             'marker:id,name',
@@ -155,6 +170,8 @@ class AttendanceController extends Controller
     // Get all classes for dropdown — withCount replaces per-class count() query
     public function classes()
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Attendance::class);
+
         $classes = ClassRoom::select('id', 'name')
             ->academic()
             ->withCount('students')
@@ -171,6 +188,8 @@ class AttendanceController extends Controller
     // Get students for a class for taking attendance
     public function students($classId)
     {
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Attendance::class);
+
         $students = Student::where('class_id', $classId)
             ->academic()
             ->with('user:id,name')
@@ -189,6 +208,8 @@ class AttendanceController extends Controller
     // Operational Report for Principals
     public function operationalReport(Request $request)
     {
+        \Illuminate\Support\Facades\Gate::authorize('viewOperationalReport', \App\Models\Attendance::class);
+
         $sessionParam = $request->query('session', date('H') >= 13 ? 'AN' : 'FN');
         $session = $sessionParam === 'AN' ? 'afternoon' : 'morning';
         $date = $request->query('date', date('Y-m-d'));

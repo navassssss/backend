@@ -18,7 +18,6 @@ class Outpass extends Model
         'out_time',
         'expected_in_time',
         'actual_in_time',
-        'created_by',
     ];
 
     protected $casts = [

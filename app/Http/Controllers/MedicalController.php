@@ -9,20 +9,14 @@ use Illuminate\Support\Facades\Auth;
 
 class MedicalController extends Controller
 {
-    private function authorize(): void
-    {
-        $user = Auth::user();
-        if (!$user->isPrincipal() && !$user->hasPermission('manage_medical')) {
-            abort(403, 'Unauthorized');
-        }
-    }
+
 
     /**
      * Active medical cases
      */
     public function active()
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('viewAny', \App\Models\MedicalRecord::class);
 
         $records = MedicalRecord::active()
             ->with([
@@ -42,7 +36,7 @@ class MedicalController extends Controller
      */
     public function history(Request $request)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('viewAny', \App\Models\MedicalRecord::class);
 
         $query = MedicalRecord::resolved()
             ->with([
@@ -89,15 +83,19 @@ class MedicalController extends Controller
      */
     public function store(Request $request)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\MedicalRecord::class);
 
         $validated = $request->validate([
             'student_id'     => 'required|exists:students,id',
             'illness_name'   => 'required|string|max:255',
-            'reported_at'    => 'required|date',
+            'reported_at'    => 'required|date|before_or_equal:now',
             'went_to_doctor' => 'boolean',
             'notes'          => 'nullable|string|max:2000',
         ]);
+
+        if (\App\Models\MedicalRecord::where('student_id', $validated['student_id'])->active()->exists()) {
+            return response()->json(['message' => 'Student is already in the medical bay'], 422);
+        }
 
         $record = MedicalRecord::create([
             ...$validated,
@@ -115,18 +113,24 @@ class MedicalController extends Controller
      */
     public function recover(Request $request, MedicalRecord $medical)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('update', $medical);
 
         if ($medical->status !== 'active') {
             return response()->json(['message' => 'Record is already resolved'], 422);
         }
 
         $request->validate([
-            'recovered_at' => 'nullable|date',
+            'recovered_at' => 'nullable|date|before_or_equal:now',
         ]);
 
+        $recoveredAt = $request->recovered_at ? \Carbon\Carbon::parse($request->recovered_at) : now();
+
+        if ($recoveredAt->lt($medical->reported_at)) {
+            return response()->json(['message' => 'Recovery time cannot be before the reported time'], 422);
+        }
+
         $medical->update([
-            'recovered_at' => $request->recovered_at ?? now(),
+            'recovered_at' => $recoveredAt,
             'recovered_by' => Auth::id(),
         ]);
 
@@ -138,18 +142,24 @@ class MedicalController extends Controller
      */
     public function sentHome(Request $request, MedicalRecord $medical)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('update', $medical);
 
         if ($medical->status !== 'active') {
             return response()->json(['message' => 'Record is already resolved'], 422);
         }
 
         $request->validate([
-            'sent_home_at' => 'nullable|date',
+            'sent_home_at' => 'nullable|date|before_or_equal:now',
         ]);
 
+        $sentHomeAt = $request->sent_home_at ? \Carbon\Carbon::parse($request->sent_home_at) : now();
+
+        if ($sentHomeAt->lt($medical->reported_at)) {
+            return response()->json(['message' => 'Sent home time cannot be before the reported time'], 422);
+        }
+
         $medical->update([
-            'sent_home_at' => $request->sent_home_at ?? now(),
+            'sent_home_at' => $sentHomeAt,
             'sent_home_by' => Auth::id(),
         ]);
 
@@ -161,7 +171,7 @@ class MedicalController extends Controller
      */
     public function toggleDoctor(MedicalRecord $medical)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('update', $medical);
 
         if ($medical->status !== 'active') {
             return response()->json(['message' => 'Cannot modify a resolved record'], 422);
@@ -179,7 +189,7 @@ class MedicalController extends Controller
      */
     public function show(MedicalRecord $medical)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('view', $medical);
         $medical->load('student.user', 'student.classRoom', 'reporter', 'recoveredBy', 'sentHomeBy');
         return response()->json($this->format($medical));
     }
@@ -189,7 +199,7 @@ class MedicalController extends Controller
      */
     public function destroy(MedicalRecord $medical)
     {
-        $this->authorize();
+        \Illuminate\Support\Facades\Gate::authorize('delete', $medical);
         $medical->delete();
         return response()->json(['message' => 'Record deleted successfully']);
     }
