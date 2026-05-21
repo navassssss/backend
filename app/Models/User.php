@@ -22,7 +22,15 @@ class User extends Authenticatable
     protected $guarded = [
     ];
 
-    protected $appends = ['abilities'];
+    protected $appends = ['abilities', 'is_class_teacher'];
+
+    public function getIsClassTeacherAttribute()
+    {
+        if (!$this->isTeacher()) {
+            return false;
+        }
+        return \App\Models\ClassRoom::where('class_teacher_id', $this->id)->exists();
+    }
 
     public function duties()
     {
