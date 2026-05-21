@@ -143,6 +143,7 @@ class CCEWorkController extends Controller
             'week' => $work->week,
             'subjectName' => $work->subject->name,
             'className' => $work->subject->classRoom->name,
+            'teacherId' => $work->subject->teacher_id,
             'toolMethod' => $work->tool_method,
             'issuedDate' => $work->issued_date->format('Y-m-d'),
             'dueDate' => $work->due_date->format('Y-m-d'),
