@@ -18,7 +18,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\Achievement::class, \App\Policies\AchievementPolicy::class);
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\Attendance::class, \App\Policies\AttendancePolicy::class);
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\CCEWork::class, \App\Policies\CCEWorkPolicy::class);
         \Illuminate\Support\Facades\Gate::policy(\App\Models\MedicalRecord::class, \App\Policies\MedicalPolicy::class);
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\Outpass::class, \App\Policies\OutpassPolicy::class);
 
         \Illuminate\Support\Facades\Gate::define('viewWebTinker', function ($user = null) {
             // WARNING: For production, you MUST change this to a secure check!
