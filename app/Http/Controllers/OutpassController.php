@@ -105,6 +105,11 @@ class OutpassController extends Controller
             return response()->json(['message' => 'Student has already been checked in.'], 422);
         }
 
+        // Guard: prevent check-in before out_time
+        if (now()->isBefore($outpass->out_time)) {
+            return response()->json(['message' => 'Cannot check in a student before their outpass start time.'], 422);
+        }
+
         $outpass->update([
             'actual_in_time' => now(),
         ]);
