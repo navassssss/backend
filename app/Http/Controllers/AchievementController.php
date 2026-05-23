@@ -98,14 +98,26 @@ class AchievementController extends Controller
         // Handle file uploads
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {
-                // Automatically generates a unique hash name and stores it in the 'public' disk
-                $path = $file->store('achievements', 'public');
+                // Manually read the file and put it into storage to bypass move_uploaded_file
+                // which often fails on Windows XAMPP environments across different drives/permissions.
+                $hashName = $file->hashName();
+                $destination = 'achievements/' . $hashName;
+                
+                $success = \Illuminate\Support\Facades\Storage::disk('public')->put(
+                    $destination, 
+                    file_get_contents($file->getRealPath())
+                );
 
-                if ($path) {
+                if ($success) {
                     $achievement->attachments()->create([
-                        'file_path' => $path,
+                        'file_path' => $destination,
                         'file_name' => $file->getClientOriginalName(), // preserve original for display
                         'mime_type' => $file->getMimeType(),
+                    ]);
+                } else {
+                    \Log::error('File upload failed via Storage::put', [
+                        'file' => $file->getClientOriginalName(),
+                        'error' => $file->getError()
                     ]);
                 }
             }
