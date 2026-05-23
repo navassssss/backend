@@ -8,6 +8,7 @@ use App\Models\Achievement;
 use App\Models\AchievementCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -115,7 +116,7 @@ class AchievementController extends Controller
                         'mime_type' => $file->getMimeType(),
                     ]);
                 } else {
-                    \Log::error('File upload failed via Storage::put', [
+                    Log::error('File upload failed via Storage::put', [
                         'file' => $file->getClientOriginalName(),
                         'error' => $file->getError()
                     ]);
