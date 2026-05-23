@@ -66,19 +66,30 @@ class AchievementController extends Controller
 
         $validated = $request->validate([
             'achievement_category_id' => 'required|exists:achievement_categories,id',
-            'title' => 'nullable|string|max:255',
+            'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'attachments' => 'nullable|array|max:3',
-            'attachments.*' => 'file|max:10240', // 10MB max per file
+            'attachments.*' => 'file|mimes:jpeg,png,jpg,pdf|max:10240', // 10MB max per file
         ]);
 
         // Get category and snapshot points
         $category = AchievementCategory::findOrFail($validated['achievement_category_id']);
 
+        // Prevent double entries within a 5-minute window
+        $isDuplicate = Achievement::where('student_id', $student->id)
+            ->where('achievement_category_id', $category->id)
+            ->where('title', $validated['title'])
+            ->where('created_at', '>=', now()->subMinutes(5))
+            ->exists();
+
+        if ($isDuplicate) {
+            return response()->json(['message' => 'You recently submitted this exact achievement. Please wait before submitting again.'], 429);
+        }
+
         $achievement = Achievement::create([
             'student_id' => $student->id,
             'achievement_category_id' => $category->id,
-            'title' => $validated['title'] ?? $category->name,
+            'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'points' => $category->points, // Snapshot
             'status' => 'pending',
@@ -87,17 +98,16 @@ class AchievementController extends Controller
         // Handle file uploads
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {
-                $cleanName = Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
-                $extension = $file->getClientOriginalExtension();
-                $safeFileName = Str::limit($cleanName, 40, '') . '-' . uniqid() . '.' . $extension;
+                // Automatically generates a unique hash name and stores it in the 'public' disk
+                $path = $file->store('achievements', 'public');
 
-                $path = $file->storeAs('achievements', $safeFileName, 'public');
-
-                $achievement->attachments()->create([
-                    'file_path' => $path,
-                    'file_name' => $file->getClientOriginalName(), // preserve original for display
-                    'mime_type' => $file->getMimeType(),
-                ]);
+                if ($path) {
+                    $achievement->attachments()->create([
+                        'file_path' => $path,
+                        'file_name' => $file->getClientOriginalName(), // preserve original for display
+                        'mime_type' => $file->getMimeType(),
+                    ]);
+                }
             }
         }
 
