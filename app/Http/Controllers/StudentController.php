@@ -252,14 +252,19 @@ class StudentController extends Controller
                     }
                 }
 
+                $newRollNumber = $studentData['roll_number'] ?? $existingStudent->roll_number;
+
                 $existingStudent->update([
                     'class_id' => $studentData['class_id'] ?? $existingStudent->class_id,
-                    'roll_number' => $studentData['roll_number'] ?? $existingStudent->roll_number,
-                    'username' => !empty($studentData['roll_number']) ? 'st_' . $studentData['roll_number'] : $existingStudent->username,
+                    'roll_number' => $newRollNumber,
+                    'username' => !empty($newRollNumber) ? $newRollNumber : $existingStudent->username,
                 ]);
 
                 if ($existingStudent->user) {
-                    $existingStudent->user->update(['name' => $studentData['name']]);
+                    $existingStudent->user->update([
+                        'name' => $studentData['name'],
+                        'username' => !empty($newRollNumber) ? $newRollNumber : $existingStudent->user->username
+                    ]);
                 }
                 
                 $createdStudents[] = $existingStudent;
@@ -275,11 +280,14 @@ class StudentController extends Controller
                 }
             }
 
+            $rollObj = $studentData['roll_number'] ?? ('TEMP' . uniqid());
+
             // Create User safely
             $user = \App\Models\User::create([
                 'name' => $studentData['name'],
+                'username' => $studentData['roll_number'] ?? null,
                 'email' => 'temp' . uniqid() . '@student.com', // temporary
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'password' => \Illuminate\Support\Facades\Hash::make($rollObj . '@dhic'),
                 'role' => 'student'
             ]);
             
@@ -287,13 +295,11 @@ class StudentController extends Controller
             $cleanName = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $studentData['name']));
             $user->update(['email' => $cleanName . $user->id . '@student.com']);
 
-            $rollObj = $studentData['roll_number'] ?? ('TEMP' . $user->id);
-
             // Create Student
             $student = Student::create([
                 'user_id' => $user->id,
                 'class_id' => $studentData['class_id'] ?? null,
-                'username' => 'st_' . $rollObj,
+                'username' => $rollObj,
                 'roll_number' => $studentData['roll_number'] ?? null,
                 'total_points' => 0,
                 'wallet_balance' => 0,
