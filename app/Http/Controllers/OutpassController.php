@@ -32,10 +32,9 @@ class OutpassController extends Controller
                 'student.user:id,name',
                 'student.classRoom:id,name',
                 'creator:id,name',
-            ])
-            ->orderBy('out_time', 'desc');
+            ]);
 
-        // Use filled() — guards against empty string / 'all' being passed
+        // Support status filter
         if ($request->filled('status')) {
             match ($request->string('status')->value()) {
                 'outside'  => $query->outside(),
@@ -43,6 +42,17 @@ class OutpassController extends Controller
                 'overdue'  => $query->overdue(),
                 default    => null,
             };
+        }
+
+        // Support student search by name or roll number
+        if ($request->filled('search')) {
+            $search = $request->string('search')->value();
+            $query->whereHas('student', function ($q) use ($search) {
+                $q->where('roll_number', 'like', "%{$search}%")
+                  ->orWhereHas('user', function ($uq) use ($search) {
+                      $uq->where('name', 'like', "%{$search}%");
+                  });
+            });
         }
 
         if ($request->filled('class_id')) {
@@ -56,6 +66,13 @@ class OutpassController extends Controller
 
         if ($request->filled('date')) {
             $query->whereDate('out_time', $request->date('date'));
+        }
+
+        // Proper ordering based on status
+        if ($request->string('status')->value() === 'returned') {
+            $query->orderBy('actual_in_time', 'desc');
+        } else {
+            $query->orderBy('out_time', 'desc');
         }
 
         return response()->json($query->paginate(20));
