@@ -25,10 +25,12 @@ class StudentAuthController extends Controller
         $login = $request->login;
         $password = $request->password;
 
-        // Try to find user by email first
-        $user = User::where('email', $login)->first();
+        // Try to find user by email or username first
+        $user = User::where('email', $login)
+            ->orWhere('username', $login)
+            ->first();
 
-        // If not found by email, try by username through student relationship
+        // If not found by email or username, try by username through student relationship
         if (!$user) {
             $student = Student::where('username', $login)->first();
             if ($student) {
