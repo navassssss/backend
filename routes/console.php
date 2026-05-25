@@ -13,3 +13,9 @@ Schedule::command('notifications:remind-unread')->hourly();
 Schedule::call(function (\App\Services\LeaderboardService $leaderboardService) {
     $leaderboardService->computeAndCacheGlobalLeaderboard();
 })->everyTenMinutes()->name('compute-leaderboards')->withoutOverlapping();
+
+// Sync Google Sheets transactions every 30 minutes (or whatever interval fits)
+Schedule::command('wallet:import --incremental')
+    ->everyThirtyMinutes()
+    ->name('sync-wallet-transactions')
+    ->withoutOverlapping();
