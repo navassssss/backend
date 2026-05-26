@@ -134,23 +134,31 @@ class AchievementController extends Controller
     {
         \Illuminate\Support\Facades\Gate::authorize('review', Achievement::class);
 
-        if ($achievement->status === 'approved') {
-            return response()->json(['message' => 'Achievement is already approved.'], 422);
-        }
-
         $request->validate([
             'review_note' => 'nullable|string',
         ]);
 
-        $achievement->update([
+        // Perform an atomic conditional update: only approve if status still 'pending'.
+        $updateData = [
             'status' => 'approved',
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
             'review_note' => $request->review_note,
-        ]);
+        ];
 
-        // Fire event to update points
-        event(new AchievementApproved($achievement->fresh(['student.class', 'category'])));
+        $rows = Achievement::where('id', $achievement->id)
+            ->where('status', 'pending')
+            ->update($updateData);
+
+        if ($rows === 0) {
+            return response()->json(['message' => 'Achievement could not be approved. It may have been processed already.'], 422);
+        }
+
+        // Reload the fresh achievement with relations for the event payload
+        $achievement = Achievement::with(['student.class', 'category'])->find($achievement->id);
+
+        // Fire event to update points (listener will run once)
+        event(new AchievementApproved($achievement));
 
         return response()->json($achievement);
     }
