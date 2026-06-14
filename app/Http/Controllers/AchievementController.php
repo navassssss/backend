@@ -75,14 +75,21 @@ class AchievementController extends Controller
                 break;
         }
 
-        $perPage = $request->query('per_page', 15);
-        $achievements = $query->paginate($perPage);
-        $pendingCount = Achievement::where('status', 'pending')->count();
+        // Check if pagination is explicitly requested or page parameter is present
+        if ($request->has('page') || $request->has('wants_pagination')) {
+            $perPage = $request->query('per_page', 15);
+            $achievements = $query->paginate($perPage);
+            $pendingCount = Achievement::where('status', 'pending')->count();
 
-        return response()->json([
-            'achievements' => $achievements,
-            'pending_count' => $pendingCount,
-        ]);
+            return response()->json([
+                'achievements' => $achievements,
+                'pending_count' => $pendingCount,
+            ]);
+        }
+
+        // Backwards compatibility: return the full unpaginated list
+        $achievements = $query->get();
+        return response()->json($achievements);
     }
 
     /**
