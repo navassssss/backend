@@ -36,14 +36,53 @@ class AchievementController extends Controller
     {
         $query = Achievement::with(['student.user', 'student.class', 'category', 'attachments']);
 
+        // Filter by student_id if provided
+        if ($request->filled('student_id')) {
+            $query->where('student_id', $request->student_id);
+        }
+
         // Filter by status if provided
-        if ($request->has('status')) {
+        if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
         }
 
-        $achievements = $query->latest()->get();
+        // Search by title or student name
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhereHas('student.user', function ($uq) use ($search) {
+                      $uq->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
 
-        return response()->json($achievements);
+        // Sort order
+        $sort = $request->query('sort', 'date_desc');
+        switch ($sort) {
+            case 'date_asc':
+                $query->orderBy('created_at', 'asc');
+                break;
+            case 'points_desc':
+                $query->orderBy('points', 'desc');
+                break;
+            case 'points_asc':
+                $query->orderBy('points', 'asc');
+                break;
+            case 'date_desc':
+            default:
+                $query->orderBy('created_at', 'desc');
+                break;
+        }
+
+        $perPage = $request->query('per_page', 15);
+        $achievements = $query->paginate($perPage);
+        $pendingCount = Achievement::where('status', 'pending')->count();
+
+        return response()->json([
+            'achievements' => $achievements,
+            'pending_count' => $pendingCount,
+        ]);
     }
 
     /**
@@ -103,9 +142,9 @@ class AchievementController extends Controller
                 // which often fails on Windows XAMPP environments across different drives/permissions.
                 $hashName = $file->hashName();
                 $destination = 'achievements/' . $hashName;
-                
+
                 $success = \Illuminate\Support\Facades\Storage::disk('public')->put(
-                    $destination, 
+                    $destination,
                     file_get_contents($file->getRealPath())
                 );
 
