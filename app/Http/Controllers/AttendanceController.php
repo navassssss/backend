@@ -256,6 +256,7 @@ class AttendanceController extends Controller
                 'name'        => $s->user?->name ?? 'Unknown',
                 'roll_number' => $s->roll_number,
                 'photo'       => $s->photo,
+                'department'  => $s->department,
             ]);
 
         return response()->json($students);
