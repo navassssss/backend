@@ -159,6 +159,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
      * CCE ROUTES
      */
     // Subjects
+    Route::get('/departments', [App\Http\Controllers\SubjectController::class, 'departments']);
     Route::get('/subjects', [App\Http\Controllers\SubjectController::class, 'index']);
     Route::post('/subjects/bulk', [App\Http\Controllers\SubjectController::class, 'bulkCreate']);
     Route::post('/subjects', [App\Http\Controllers\SubjectController::class, 'store']);

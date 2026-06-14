@@ -28,7 +28,7 @@ class SubjectController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Subject::with(['classRoom', 'teacher'])
+        $query = Subject::with(['classRoom', 'teacher', 'department'])
             ->withCount('works as total_works_assigned')
             ->with(['works' => function ($q) {
                 $q->withCount([
@@ -61,7 +61,8 @@ class SubjectController extends Controller
                     'finalMaxMarks'      => $subject->final_max_marks,
                     'isLocked'           => $subject->is_locked,
                     'assignmentScope'    => $subject->assignment_scope,
-                    'department'         => $subject->department,
+                    'department'         => $subject->department?->name,
+                    'department_id'      => $subject->department_id,
                     'completion_percent' => $completionPercent,
                 ];
             });
@@ -110,7 +111,7 @@ class SubjectController extends Controller
             'teacher_id'       => 'required|exists:users,id',
             'final_max_marks'  => 'required|integer|min:1|max:100',
             'assignment_scope' => 'sometimes|in:full_class,selected_students,department',
-            'department'       => 'sometimes|nullable|string|max:255',
+            'department_id'    => 'sometimes|nullable|exists:departments,id',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
             'code'             => [
@@ -132,6 +133,9 @@ class SubjectController extends Controller
 
 
         $scope = $validated['assignment_scope'] ?? 'full_class';
+        if ($scope !== 'department') {
+            $validated['department_id'] = null;
+        }
         $studentIds = $validated['student_ids'] ?? [];
         unset($validated['student_ids']);
 
@@ -149,7 +153,7 @@ class SubjectController extends Controller
 
     public function show($id)
     {
-        $subject = Subject::with(['classRoom', 'teacher', 'works', 'assignedStudents'])->findOrFail($id);
+        $subject = Subject::with(['classRoom', 'teacher', 'works', 'assignedStudents', 'department'])->findOrFail($id);
 
         return response()->json([
             'id'              => $subject->id,
@@ -162,7 +166,8 @@ class SubjectController extends Controller
             'finalMaxMarks'   => $subject->final_max_marks,
             'isLocked'        => $subject->is_locked,
             'assignmentScope' => $subject->assignment_scope,
-            'department'      => $subject->department,
+            'department'      => $subject->department?->name,
+            'department_id'   => $subject->department_id,
             'studentIds'      => $subject->assignedStudents->pluck('id'),
             'worksCount'      => $subject->works->count(),
         ]);
@@ -187,7 +192,7 @@ class SubjectController extends Controller
             'teacher_id'       => 'sometimes|exists:users,id',
             'final_max_marks'  => 'sometimes|integer|min:1|max:100',
             'assignment_scope' => 'sometimes|in:full_class,selected_students,department',
-            'department'       => 'sometimes|nullable|string|max:255',
+            'department_id'    => 'sometimes|nullable|exists:departments,id',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
         ], [
@@ -196,6 +201,11 @@ class SubjectController extends Controller
 
         $studentIds = $validated['student_ids'] ?? null;
         unset($validated['student_ids']);
+
+        $scope = $validated['assignment_scope'] ?? $subject->assignment_scope;
+        if ($scope !== 'department') {
+            $validated['department_id'] = null;
+        }
 
         $subject->update($validated);
 
@@ -326,5 +336,10 @@ class SubjectController extends Controller
             'works'           => $worksData,
             'student_marks'   => $studentMarks,
         ]);
+    }
+
+    public function departments()
+    {
+        return response()->json(\App\Models\Department::select('id', 'name')->get());
     }
 }
