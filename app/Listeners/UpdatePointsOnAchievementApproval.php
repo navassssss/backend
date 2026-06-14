@@ -37,5 +37,8 @@ class UpdatePointsOnAchievementApproval
                 'year' => now()->year,
             ]);
         });
+
+        // Rebuild leaderboard cache
+        app(\App\Services\LeaderboardService::class)->computeAndCacheGlobalLeaderboard();
     }
 }

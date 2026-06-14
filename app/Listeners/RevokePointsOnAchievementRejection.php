@@ -26,5 +26,8 @@ class RevokePointsOnAchievementRejection
                 ->where('student_id', $student->id)
                 ->delete();
         });
+
+        // Rebuild leaderboard cache
+        app(\App\Services\LeaderboardService::class)->computeAndCacheGlobalLeaderboard();
     }
 }
