@@ -61,6 +61,7 @@ class SubjectController extends Controller
                     'finalMaxMarks'      => $subject->final_max_marks,
                     'isLocked'           => $subject->is_locked,
                     'assignmentScope'    => $subject->assignment_scope,
+                    'department'         => $subject->department,
                     'completion_percent' => $completionPercent,
                 ];
             });
@@ -108,7 +109,8 @@ class SubjectController extends Controller
             'class_id'         => 'required|exists:class_rooms,id',
             'teacher_id'       => 'required|exists:users,id',
             'final_max_marks'  => 'required|integer|min:1|max:100',
-            'assignment_scope' => 'sometimes|in:full_class,selected_students',
+            'assignment_scope' => 'sometimes|in:full_class,selected_students,department',
+            'department'       => 'sometimes|nullable|string|max:255',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
             'code'             => [
@@ -160,6 +162,7 @@ class SubjectController extends Controller
             'finalMaxMarks'   => $subject->final_max_marks,
             'isLocked'        => $subject->is_locked,
             'assignmentScope' => $subject->assignment_scope,
+            'department'      => $subject->department,
             'studentIds'      => $subject->assignedStudents->pluck('id'),
             'worksCount'      => $subject->works->count(),
         ]);
@@ -183,7 +186,8 @@ class SubjectController extends Controller
             ],
             'teacher_id'       => 'sometimes|exists:users,id',
             'final_max_marks'  => 'sometimes|integer|min:1|max:100',
-            'assignment_scope' => 'sometimes|in:full_class,selected_students',
+            'assignment_scope' => 'sometimes|in:full_class,selected_students,department',
+            'department'       => 'sometimes|nullable|string|max:255',
             'student_ids'      => 'sometimes|array',
             'student_ids.*'    => 'exists:students,id',
         ], [
@@ -198,8 +202,8 @@ class SubjectController extends Controller
         // Sync pivot if scope is selected_students (or if student_ids explicitly passed)
         if (($subject->assignment_scope === 'selected_students') && $studentIds !== null) {
             $subject->assignedStudents()->sync($studentIds);
-        } elseif (isset($validated['assignment_scope']) && $validated['assignment_scope'] === 'full_class') {
-            // Switching back to full_class — clear pivot
+        } elseif (isset($validated['assignment_scope']) && $validated['assignment_scope'] !== 'selected_students') {
+            // Switching back to full_class or department — clear pivot
             $subject->assignedStudents()->detach();
         }
 

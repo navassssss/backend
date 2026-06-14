@@ -17,6 +17,7 @@ class Subject extends Model
         'final_max_marks',
         'is_locked',
         'assignment_scope',
+        'department',
     ];
 
     protected $casts = [
@@ -57,6 +58,11 @@ class Subject extends Model
     {
         if ($this->assignment_scope === 'selected_students') {
             return $this->assignedStudents()->pluck('students.id');
+        }
+        if ($this->assignment_scope === 'department') {
+            return Student::where('class_id', $this->class_id)
+                ->where('department', $this->department)
+                ->pluck('id');
         }
         return Student::where('class_id', $this->class_id)->pluck('id');
     }

@@ -232,6 +232,7 @@ class StudentController extends Controller
             'students.*.name' => 'required|string',
             'students.*.roll_number' => 'nullable|string',
             'students.*.class_id' => 'nullable|exists:class_rooms,id',
+            'students.*.department' => 'nullable|string|max:255',
         ]);
 
         $createdStudents = [];
@@ -258,6 +259,7 @@ class StudentController extends Controller
                     'class_id' => $studentData['class_id'] ?? $existingStudent->class_id,
                     'roll_number' => $newRollNumber,
                     'username' => !empty($newRollNumber) ? $newRollNumber : $existingStudent->username,
+                    'department' => array_key_exists('department', $studentData) ? $studentData['department'] : $existingStudent->department,
                 ]);
 
                 if ($existingStudent->user) {
@@ -299,6 +301,7 @@ class StudentController extends Controller
             $student = Student::create([
                 'user_id' => $user->id,
                 'class_id' => $studentData['class_id'] ?? null,
+                'department' => $studentData['department'] ?? null,
                 'username' => $rollObj,
                 'roll_number' => $studentData['roll_number'] ?? null,
                 'total_points' => 0,
