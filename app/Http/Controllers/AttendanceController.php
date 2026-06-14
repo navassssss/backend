@@ -248,7 +248,7 @@ class AttendanceController extends Controller
 
         $students = Student::where('class_id', $classId)
             ->academic()
-            ->with('user:id,name')
+            ->with(['user:id,name', 'department'])
             ->orderByRaw('CAST(roll_number AS UNSIGNED) ASC')
             ->get()
             ->map(fn ($s) => [
@@ -256,7 +256,7 @@ class AttendanceController extends Controller
                 'name'        => $s->user?->name ?? 'Unknown',
                 'roll_number' => $s->roll_number,
                 'photo'       => $s->photo,
-                'department'  => $s->department,
+                'department'  => $s->department?->name,
             ]);
 
         return response()->json($students);
