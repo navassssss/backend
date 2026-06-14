@@ -75,6 +75,11 @@ class RecalculatePoints extends Command
                 $class->save();
             }
             $this->info('Recalculated total points for ' . $classes->count() . ' classes.');
+
+            // 4. Rebuild the cached leaderboard synchronously
+            $this->info('Rebuilding cached leaderboard...');
+            app(\App\Services\LeaderboardService::class)->computeAndCacheGlobalLeaderboard();
+            $this->info('Leaderboard cache updated.');
         });
 
         $this->info('Points recalculation completed successfully!');
