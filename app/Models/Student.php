@@ -11,7 +11,7 @@ class Student extends Model
     protected $fillable = [
         'user_id',
         'class_id',
-        'department',
+        'department_id',
         'username',
         'roll_number',
         'photo',
@@ -33,6 +33,18 @@ class Student extends Model
     ];
 
     protected $appends = ['stars', 'monthly_points', 'name'];
+
+    protected $attributes = [
+        'wallet_balance' => 0.00,
+        'opening_balance' => 0.00,
+        'monthly_fee' => 0.00,
+        'total_points' => 0,
+    ];
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
 
     // ── Scopes ──────────────────────────────────────────────────────────────
 

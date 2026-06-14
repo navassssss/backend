@@ -12,7 +12,7 @@ class StudentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Student::with(['classRoom', 'user'])->academic();
+        $query = Student::with(['classRoom', 'user', 'department'])->academic();
 
         // Search by name or roll number
         // Search by name (in users table) or roll number
@@ -74,7 +74,7 @@ class StudentController extends Controller
      */
     public function showById($id)
     {
-        $student = Student::with(['classRoom', 'user'])
+        $student = Student::with(['classRoom', 'user', 'department'])
             ->findOrFail($id);
 
         return response()->json($student);
@@ -238,7 +238,12 @@ class StudentController extends Controller
         $createdStudents = [];
 
         foreach ($validated['students'] as $studentData) {
-            
+            $departmentId = null;
+            if (!empty($studentData['department'])) {
+                $dept = \App\Models\Department::firstOrCreate(['name' => trim($studentData['department'])]);
+                $departmentId = $dept->id;
+            }
+
             // 1) UPDATE EXISTING STUDENT
             if (!empty($studentData['id'])) {
                 $existingStudent = Student::find($studentData['id']);
@@ -259,7 +264,7 @@ class StudentController extends Controller
                     'class_id' => $studentData['class_id'] ?? $existingStudent->class_id,
                     'roll_number' => $newRollNumber,
                     'username' => !empty($newRollNumber) ? $newRollNumber : $existingStudent->username,
-                    'department' => array_key_exists('department', $studentData) ? $studentData['department'] : $existingStudent->department,
+                    'department_id' => array_key_exists('department', $studentData) ? $departmentId : $existingStudent->department_id,
                 ]);
 
                 if ($existingStudent->user) {
@@ -301,7 +306,7 @@ class StudentController extends Controller
             $student = Student::create([
                 'user_id' => $user->id,
                 'class_id' => $studentData['class_id'] ?? null,
-                'department' => $studentData['department'] ?? null,
+                'department_id' => $departmentId,
                 'username' => $rollObj,
                 'roll_number' => $studentData['roll_number'] ?? null,
                 'total_points' => 0,
@@ -310,7 +315,7 @@ class StudentController extends Controller
                 'monthly_fee' => 0,
             ]);
 
-            $student->load('user', 'classRoom');
+            $student->load('user', 'classRoom', 'department');
             $createdStudents[] = $student;
         }
 

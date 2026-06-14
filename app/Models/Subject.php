@@ -17,7 +17,7 @@ class Subject extends Model
         'final_max_marks',
         'is_locked',
         'assignment_scope',
-        'department',
+        'department_id',
     ];
 
     protected $casts = [
@@ -41,6 +41,11 @@ class Subject extends Model
         return $this->hasMany(CCEWork::class);
     }
 
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
+
     /**
      * Students explicitly assigned (used when assignment_scope = selected_students).
      */
@@ -61,7 +66,7 @@ class Subject extends Model
         }
         if ($this->assignment_scope === 'department') {
             return Student::where('class_id', $this->class_id)
-                ->where('department', $this->department)
+                ->where('department_id', $this->department_id)
                 ->pluck('id');
         }
         return Student::where('class_id', $this->class_id)->pluck('id');
