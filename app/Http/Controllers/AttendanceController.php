@@ -33,30 +33,32 @@ class AttendanceController extends Controller
         \Illuminate\Support\Facades\Gate::authorize('create', \App\Models\Attendance::class);
 
         $validated = $request->validate([
-            'class_id'        => 'required|exists:class_rooms,id',
-            'date'            => 'required|date',
-            'session'         => 'required|in:morning,afternoon',
+            'class_id' => 'required|exists:class_rooms,id',
+            'date' => 'required|date',
+            'session' => 'required|in:morning,afternoon',
             'absent_students' => 'present|array',
             'absent_students.*.id' => 'required|exists:students,id',
             'absent_students.*.reason' => 'nullable|string|max:255',
         ]);
 
-        if (Attendance::where('class_id', $validated['class_id'])
-            ->where('date', $validated['date'])
-            ->where('session', $validated['session'])
-            ->exists()) {
+        if (
+            Attendance::where('class_id', $validated['class_id'])
+                ->where('date', $validated['date'])
+                ->where('session', $validated['session'])
+                ->exists()
+        ) {
             return response()->json(['message' => 'Attendance already submitted for this session'], 422);
         }
 
         DB::transaction(function () use ($validated, $request) {
             $attendance = Attendance::create([
-                'class_id'  => $validated['class_id'],
-                'date'      => $validated['date'],
-                'session'   => $validated['session'],
+                'class_id' => $validated['class_id'],
+                'date' => $validated['date'],
+                'session' => $validated['session'],
                 'marked_by' => $request->user()->id,
             ]);
 
-            $students  = Student::where('class_id', $validated['class_id'])->academic()->pluck('id');
+            $students = Student::where('class_id', $validated['class_id'])->academic()->pluck('id');
             $absentSet = collect($validated['absent_students'])->keyBy('id'); // O(1) lookup
 
             // Single bulk insert instead of one INSERT per student
@@ -64,11 +66,11 @@ class AttendanceController extends Controller
                 $isAbsent = $absentSet->has($sid);
                 return [
                     'attendance_id' => $attendance->id,
-                    'student_id'    => $sid,
-                    'status'        => $isAbsent ? 'absent' : 'present',
-                    'remarks'       => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
-                    'created_at'    => now(),
-                    'updated_at'    => now(),
+                    'student_id' => $sid,
+                    'status' => $isAbsent ? 'absent' : 'present',
+                    'remarks' => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ];
             })->all();
 
@@ -99,43 +101,43 @@ class AttendanceController extends Controller
             $recordCollection = $att->records;
 
             $present = $recordCollection->where('status', 'present')->count();
-            $absent  = $recordCollection->where('status', 'absent')->count();
+            $absent = $recordCollection->where('status', 'absent')->count();
 
             $absentStudents = $recordCollection
                 ->where('status', 'absent')
-                ->map(fn ($r) => [
-                    'id'          => $r->student?->id,
-                    'name'        => $r->student?->user?->name ?? 'Unknown',
+                ->map(fn($r) => [
+                    'id' => $r->student?->id,
+                    'name' => $r->student?->user?->name ?? 'Unknown',
                     'roll_number' => $r->student?->roll_number,
-                    'reason'      => $r->remarks,
+                    'reason' => $r->remarks,
                 ])->values();
 
             return [
-                'id'             => $att->id,
-                'className'      => $att->classRoom?->name,
-                'classId'        => $att->classRoom?->id,
-                'session'        => $att->session,
-                'teacherName'    => $att->marker?->name,
-                'presentCount'   => $present,
-                'absentCount'    => $absent,
+                'id' => $att->id,
+                'className' => $att->classRoom?->name,
+                'classId' => $att->classRoom?->id,
+                'session' => $att->session,
+                'teacherName' => $att->marker?->name,
+                'presentCount' => $present,
+                'absentCount' => $absent,
                 'absentStudents' => $absentStudents,
-                'date'           => $att->date,
-                'submittedAt'    => $att->created_at->toIso8601String(),
+                'date' => $att->date,
+                'submittedAt' => $att->created_at->toIso8601String(),
             ];
         });
 
         // Day-level stats from already-loaded data — no extra DB query
-        $allRecords       = $attendances->flatMap(fn ($a) => $a->records);
-        $morningRecords   = $allRecords->filter(fn ($r) => $r->attendance?->session === 'morning');
-        $afternoonRecords = $allRecords->filter(fn ($r) => $r->attendance?->session === 'afternoon');
+        $allRecords = $attendances->flatMap(fn($a) => $a->records);
+        $morningRecords = $allRecords->filter(fn($r) => $r->attendance?->session === 'morning');
+        $afternoonRecords = $allRecords->filter(fn($r) => $r->attendance?->session === 'afternoon');
 
         return response()->json([
-            'records'    => $records,
+            'records' => $records,
             'todayStats' => [
-                'morningPresent'   => $morningRecords->where('status', 'present')->count(),
-                'morningAbsent'    => $morningRecords->where('status', 'absent')->count(),
+                'morningPresent' => $morningRecords->where('status', 'present')->count(),
+                'morningAbsent' => $morningRecords->where('status', 'absent')->count(),
                 'afternoonPresent' => $afternoonRecords->where('status', 'present')->count(),
-                'afternoonAbsent'  => $afternoonRecords->where('status', 'absent')->count(),
+                'afternoonAbsent' => $afternoonRecords->where('status', 'absent')->count(),
             ],
         ]);
     }
@@ -154,18 +156,18 @@ class AttendanceController extends Controller
         ])->findOrFail($id);
 
         return response()->json([
-            'id'          => $attendance->id,
-            'className'   => $attendance->classRoom?->name,
-            'classId'     => $attendance->class_id,
-            'session'     => $attendance->session,
-            'date'        => $attendance->date,
+            'id' => $attendance->id,
+            'className' => $attendance->classRoom?->name,
+            'classId' => $attendance->class_id,
+            'session' => $attendance->session,
+            'date' => $attendance->date,
             'teacherName' => $attendance->marker?->name,
-            'records'     => $attendance->records->map(fn ($r) => [
-                'studentId'   => $r->student_id,
+            'records' => $attendance->records->map(fn($r) => [
+                'studentId' => $r->student_id,
                 'studentName' => $r->student?->name ?? $r->student?->user?->name,
-                'rollNumber'  => $r->student?->roll_number,
-                'status'      => $r->status,
-                'reason'      => $r->remarks,
+                'rollNumber' => $r->student?->roll_number,
+                'status' => $r->status,
+                'reason' => $r->remarks,
             ]),
         ]);
     }
@@ -195,11 +197,11 @@ class AttendanceController extends Controller
                 $isAbsent = $absentSet->has($sid);
                 return [
                     'attendance_id' => $attendance->id,
-                    'student_id'    => $sid,
-                    'status'        => $isAbsent ? 'absent' : 'present',
-                    'remarks'       => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
-                    'created_at'    => $attendance->created_at,
-                    'updated_at'    => now(),
+                    'student_id' => $sid,
+                    'status' => $isAbsent ? 'absent' : 'present',
+                    'remarks' => $isAbsent ? $absentSet->get($sid)['reason'] ?? null : null,
+                    'created_at' => $attendance->created_at,
+                    'updated_at' => now(),
                 ];
             })->all();
 
@@ -232,9 +234,9 @@ class AttendanceController extends Controller
             ->academic()
             ->withCount('students')
             ->get()
-            ->map(fn ($c) => [
-                'id'           => $c->id,
-                'name'         => $c->name,
+            ->map(fn($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
                 'studentCount' => $c->students_count,
             ]);
 
@@ -251,12 +253,12 @@ class AttendanceController extends Controller
             ->with(['user:id,name', 'department'])
             ->orderByRaw('CAST(roll_number AS UNSIGNED) ASC')
             ->get()
-            ->map(fn ($s) => [
-                'id'          => $s->id,
-                'name'        => $s->user?->name ?? 'Unknown',
+            ->map(fn($s) => [
+                'id' => $s->id,
+                'name' => $s->user?->name ?? 'Unknown',
                 'roll_number' => $s->roll_number,
-                'photo'       => $s->photo,
-                'department'  => $s->department?->name,
+                'photo' => $s->photo,
+                'department' => $s->department?->name,
             ]);
 
         return response()->json($students);
@@ -283,43 +285,47 @@ class AttendanceController extends Controller
         $fnAttendanceCount = $morningRecords->where('status', 'present')->count();
         $anAttendanceCount = $afternoonRecords->where('status', 'present')->count();
 
-        $cutoffTime = $session === 'morning' 
-            ? Carbon::parse($date . ' 07:45:00') 
+        $cutoffTime = $session === 'morning'
+            ? Carbon::parse($date . ' 07:45:00')
             : Carbon::parse($date . ' 14:00:00');
 
         $allOutpasses = Outpass::with(['student.classRoom', 'student.user'])
             ->whereDate('out_time', '<=', $date)
             ->where(function ($query) use ($date) {
                 $query->whereNull('actual_in_time')
-                      ->orWhereDate('actual_in_time', '>=', $date);
+                    ->orWhereDate('actual_in_time', '>=', $date);
             })
             ->get();
 
         $activeOutpasses = $allOutpasses->filter(function ($pass) use ($cutoffTime) {
-            if (is_null($pass->actual_in_time)) return true;
-            if (Carbon::parse($pass->actual_in_time)->lte($cutoffTime)) return false;
+            if (is_null($pass->actual_in_time))
+                return true;
+            if (Carbon::parse($pass->actual_in_time)->lte($cutoffTime))
+                return false;
             return true;
         });
-            
+
         $allMedicalCases = MedicalRecord::with(['student.classRoom', 'student.user'])
             ->whereDate('reported_at', '<=', $date)
             ->whereNull('sent_home_at') // Ignore sent home, outpass handles them
             ->where(function ($query) use ($date) {
                 $query->whereNull('recovered_at')
-                      ->orWhereDate('recovered_at', '>=', $date);
+                    ->orWhereDate('recovered_at', '>=', $date);
             })
             ->get();
 
         $medicalCases = $allMedicalCases->filter(function ($med) use ($cutoffTime) {
-            if (is_null($med->recovered_at)) return true;
-            if (Carbon::parse($med->recovered_at)->lte($cutoffTime)) return false;
+            if (is_null($med->recovered_at))
+                return true;
+            if (Carbon::parse($med->recovered_at)->lte($cutoffTime))
+                return false;
             return true;
         });
 
         $sessionRecords = $session === 'morning' ? $morningRecords : $afternoonRecords;
-        
+
         $absentRecords = $sessionRecords->where('status', 'absent');
-        
+
         $outpassStudentIds = $activeOutpasses->pluck('student_id')->toArray();
         $medicalStudentIds = $medicalCases->pluck('student_id')->toArray();
 
@@ -328,7 +334,8 @@ class AttendanceController extends Controller
 
         foreach ($absentRecords as $record) {
             $student = $record->student;
-            if (!$student) continue;
+            if (!$student)
+                continue;
 
             $isOutpass = in_array($student->id, $outpassStudentIds);
             $isMedical = in_array($student->id, $medicalStudentIds);
@@ -367,10 +374,11 @@ class AttendanceController extends Controller
 
         foreach ($medicalCases as $case) {
             // If they also have an outpass, the Outpass module takes precedence
-            if (in_array($case->student_id, $outpassStudentIds)) continue;
+            if (in_array($case->student_id, $outpassStudentIds))
+                continue;
 
-            $timeStr = $case->recovered_at 
-                ? 'Recovered ' . Carbon::parse($case->recovered_at)->format('h:i A') 
+            $timeStr = $case->recovered_at
+                ? 'Recovered ' . Carbon::parse($case->recovered_at)->format('h:i A')
                 : 'Still in Medical';
 
             $officialAbsences[] = [
@@ -383,8 +391,8 @@ class AttendanceController extends Controller
         }
 
         foreach ($activeOutpasses as $pass) {
-            $timeStr = $pass->actual_in_time 
-                ? 'Returned ' . Carbon::parse($pass->actual_in_time)->format('h:i A') 
+            $timeStr = $pass->actual_in_time
+                ? 'Returned ' . Carbon::parse($pass->actual_in_time)->format('h:i A')
                 : 'Still Outside';
 
             $officialAbsences[] = [
