@@ -235,6 +235,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
 // Public leaderboards (no auth required)
 Route::get('/leaderboard/students', [LeaderboardController::class, 'students']);
 Route::get('/leaderboard/classes', [LeaderboardController::class, 'classes']);
+Route::get('/leaderboard/departments', [LeaderboardController::class, 'departments']);
 
 // Public student profile
 Route::get('/students/{username}', [StudentController::class, 'show']);

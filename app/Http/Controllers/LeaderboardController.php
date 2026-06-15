@@ -29,4 +29,13 @@ class LeaderboardController extends Controller
         $type = $request->get('type', 'overall'); // monthly or overall
         return response()->json($this->leaderboardService->getLeaderboard('classes', $type));
     }
+
+    /**
+     * Get department leaderboard (monthly or overall)
+     */
+    public function departments(Request $request)
+    {
+        $type = $request->get('type', 'overall'); // monthly or overall
+        return response()->json($this->leaderboardService->getLeaderboard('departments', $type));
+    }
 }
