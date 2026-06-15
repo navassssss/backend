@@ -42,6 +42,9 @@ class LeaderboardService
         Cache::put('leaderboard:classes:overall', $this->computeClasses('overall'), now()->addMinutes(15));
         Cache::put('leaderboard:classes:monthly', $this->computeClasses('monthly'), now()->addMinutes(15));
 
+        Cache::put('leaderboard:departments:overall', $this->computeDepartments('overall'), now()->addMinutes(15));
+        Cache::put('leaderboard:departments:monthly', $this->computeDepartments('monthly'), now()->addMinutes(15));
+
         Cache::put('leaderboard:last_updated', now()->toIso8601String(), now()->addMinutes(15));
     }
 
@@ -100,28 +103,78 @@ class LeaderboardService
             (SELECT COALESCE(SUM(points), 0) FROM points_logs WHERE points_logs.class_id = class_rooms.id AND points_logs.month = ? AND points_logs.year = ?) as prev_month_points
         ', [$cm, $cy, $pm, $py]);
 
-        if ($type === 'monthly') {
-            $query->orderBy('current_month_points', 'desc');
-        } else {
-            $query->orderByDesc('total_points');
-        }
-
         $classes = $query->get();
 
-        return $classes->map(function ($class, $index) use ($type) {
+        $mapped = $classes->map(function ($class) use ($type) {
             $curr = $class->current_month_points ?? 0;
             $prev = $class->prev_month_points ?? 0;
             $growth = $prev > 0 ? round((($curr - $prev) / $prev) * 100, 1) : ($curr > 0 ? 100 : 0);
 
+            $points = $type === 'monthly' ? $curr : $class->total_points;
+            $studentsCount = $class->students_count ?: 0;
+            $average = $studentsCount > 0 ? round($points / $studentsCount, 2) : 0.00;
+
             return [
-                'rank' => $index + 1,
                 'class_id' => $class->id,
                 'class_name' => $class->name,
                 'department' => $class->department,
-                'points' => $type === 'monthly' ? $curr : $class->total_points,
+                'points' => $points,
                 'growth' => $growth,
-                'student_count' => $class->students_count,
+                'student_count' => $studentsCount,
+                'average' => $average,
             ];
+        });
+
+        $sorted = $mapped->sortByDesc('average')->values();
+
+        return $sorted->map(function ($item, $index) {
+            $item['rank'] = $index + 1;
+            return $item;
+        })->toArray();
+    }
+
+    private function computeDepartments(string $type)
+    {
+        $cm = now()->month;
+        $cy = now()->year;
+        $pm = now()->subMonth()->month;
+        $py = now()->subMonth()->year;
+
+        $departments = \App\Models\Department::withCount('students')->get();
+
+        $mapped = $departments->map(function ($department) use ($type, $cm, $cy, $pm, $py) {
+            $studentIds = $department->students()->pluck('id');
+
+            if ($type === 'monthly') {
+                $points = \App\Models\PointsLog::whereIn('student_id', $studentIds)
+                    ->where('month', $cm)
+                    ->where('year', $cy)
+                    ->sum('points');
+            } else {
+                $points = $department->students()->sum('total_points');
+            }
+
+            $prev = \App\Models\PointsLog::whereIn('student_id', $studentIds)
+                ->where('month', $pm)
+                ->where('year', $py)
+                ->sum('points');
+            
+            $growth = $prev > 0 ? round((($points - $prev) / $prev) * 100, 1) : ($points > 0 ? 100 : 0);
+
+            return [
+                'department_id' => $department->id,
+                'department_name' => $department->name,
+                'student_count' => $department->students_count,
+                'points' => (int) $points,
+                'growth' => $growth,
+            ];
+        });
+
+        $sorted = $mapped->sortByDesc('points')->values();
+
+        return $sorted->map(function ($item, $index) {
+            $item['rank'] = $index + 1;
+            return $item;
         })->toArray();
     }
 }
