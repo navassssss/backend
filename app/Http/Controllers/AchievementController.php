@@ -24,7 +24,22 @@ class AchievementController extends Controller
         $achievements = Achievement::where('student_id', $student->id)
             ->with(['category', 'approver', 'attachments'])
             ->latest()
-            ->get();
+            ->get()
+            ->map(function ($achievement) {
+                return [
+                    'id' => $achievement->id,
+                    'title' => $achievement->title,
+                    'description' => $achievement->description,
+                    'points' => $achievement->points,
+                    'status' => $achievement->status,
+                    'review_note' => $achievement->review_note,
+                    'created_at' => $achievement->created_at,
+                    'approved_at' => $achievement->approved_at,
+                    'category' => $achievement->category ? $achievement->category->only(['id', 'name', 'points']) : null,
+                    'approver' => $achievement->approver ? $achievement->approver->only(['id', 'name']) : null,
+                    'attachments' => $achievement->attachments->map->only(['id', 'file_path', 'file_name', 'mime_type']),
+                ];
+            });
 
         return response()->json($achievements);
     }
