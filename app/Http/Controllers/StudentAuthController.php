@@ -52,10 +52,17 @@ class StudentAuthController extends Controller
         // Load student data with relationships
         $user->load('student.class');
 
+        // Remove circular/redundant relations from the JSON payload
+        $student = $user->student;
+        if ($student) {
+            $student->unsetRelation('user');
+        }
+        $user->unsetRelation('student');
+
         return response()->json([
             'token' => $token,
             'user' => $user,
-            'student' => $this->buildStudentData($user->student),
+            'student' => $student ? $this->buildStudentData($student) : null,
         ]);
     }
 
@@ -67,9 +74,16 @@ class StudentAuthController extends Controller
         $user = $request->user();
         $user->load('student.class');
 
+        // Remove circular/redundant relations from the JSON payload
+        $student = $user->student;
+        if ($student) {
+            $student->unsetRelation('user');
+        }
+        $user->unsetRelation('student');
+
         return response()->json([
             'user' => $user,
-            'student' => $this->buildStudentData($user->student),
+            'student' => $student ? $this->buildStudentData($student) : null,
         ]);
     }
 
