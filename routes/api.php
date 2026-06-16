@@ -254,6 +254,7 @@ Route::middleware('auth:sanctum')->prefix('student')->group(function () {
     Route::put('/profile', [StudentController::class, 'update']);
 
     // Achievements
+    Route::get('/achievements/summary', [AchievementController::class, 'summary']);
     Route::get('/achievements', [AchievementController::class, 'index']);
     Route::post('/achievements', [AchievementController::class, 'store']);
     Route::get('/achievement-categories', [AchievementController::class, 'categories']);
