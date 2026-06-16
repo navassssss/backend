@@ -45,7 +45,7 @@
             </div>
 
             <!-- Form -->
-            <form action="/telescope/login" method="POST" class="space-y-5">
+            <form action="{{ route('telescope.login') }}" method="POST" class="space-y-5">
                 @csrf
 
                 <!-- Password Input -->
