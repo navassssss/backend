@@ -12,7 +12,7 @@ class AuthorizeTelescope
      */
     public function handle(Request $request, Closure $next)
     {
-        if ($request->is('telescope/login') || $request->is('telescope/logout')) {
+        if ($request->is('telescopelogin') || $request->is('telescopelogout')) {
             return $next($request);
         }
 
