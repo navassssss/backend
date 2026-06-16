@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
@@ -52,7 +51,9 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
     protected function gate(): void
     {
         Gate::define('viewTelescope', function ($user = null) {
-            return true;
+            // Authorization is handled via a custom session-based password login.
+            // The session key is set by TelescopeAuthController upon successful login.
+            return session('telescope_authenticated') === true;
         });
     }
 }
