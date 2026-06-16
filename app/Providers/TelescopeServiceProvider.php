@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
@@ -21,23 +22,19 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
         $isLocal = $this->app->environment('local');
 
         Telescope::filter(function (IncomingEntry $entry) use ($isLocal) {
-            return true; // Capture all request logs, queries, and errors in all environments
-        });
-
-        // Tag each entry with the authenticated user's name and role so they
-        // appear inline in the Telescope list — no need to open the detail page.
-        Telescope::tag(function (IncomingEntry $entry) {
-            if (auth()->check()) {
-                $user = auth()->user();
-                $name = $user->name ?? $user->email ?? 'Unknown';
-                $role = $user->role ?? null;
-
-                return $role
-                    ? ["{$name}", "role:{$role}"]
-                    : ["{$name}"];
+            // CIRCUIT BREAKER: If PHP memory exceeds 90MB, stop Telescope entirely
+            // to prevent it from crashing the user's request with a Fatal OOM Error.
+            if (memory_get_usage(true) > 90 * 1024 * 1024) {
+                Telescope::stopRecording();
+                return false;
             }
 
-            return ['guest'];
+            return $isLocal ||
+                   $entry->isReportableException() ||
+                   $entry->isFailedRequest() ||
+                   $entry->isFailedJob() ||
+                   $entry->isScheduledTask() ||
+                   $entry->hasMonitoredTag();
         });
     }
 
@@ -66,10 +63,10 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
      */
     protected function gate(): void
     {
-        Gate::define('viewTelescope', function ($user = null) {
-            // Authorization is handled via a custom session-based password login.
-            // The session key is set by TelescopeAuthController upon successful login.
-            return session('telescope_authenticated') === true;
+        Gate::define('viewTelescope', function (User $user) {
+            return in_array($user->email, [
+                //
+            ]);
         });
     }
 }
