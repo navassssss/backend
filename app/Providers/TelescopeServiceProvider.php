@@ -23,6 +23,22 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
         Telescope::filter(function (IncomingEntry $entry) use ($isLocal) {
             return true; // Capture all request logs, queries, and errors in all environments
         });
+
+        // Tag each entry with the authenticated user's name and role so they
+        // appear inline in the Telescope list — no need to open the detail page.
+        Telescope::tag(function (IncomingEntry $entry) {
+            if (auth()->check()) {
+                $user = auth()->user();
+                $name = $user->name ?? $user->email ?? 'Unknown';
+                $role = $user->role ?? null;
+
+                return $role
+                    ? ["{$name}", "role:{$role}"]
+                    : ["{$name}"];
+            }
+
+            return ['guest'];
+        });
     }
 
     /**
