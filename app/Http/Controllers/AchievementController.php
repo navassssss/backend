@@ -45,6 +45,40 @@ class AchievementController extends Controller
     }
 
     /**
+     * Get a lightweight summary of achievements for the student dashboard
+     */
+    public function summary(Request $request)
+    {
+        $student = $request->user()->student;
+
+        $pendingCount = Achievement::where('student_id', $student->id)
+            ->where('status', 'pending')
+            ->count();
+
+        $recent = Achievement::where('student_id', $student->id)
+            ->where('status', 'approved')
+            ->with(['category'])
+            ->latest('approved_at')
+            ->take(4)
+            ->get()
+            ->map(function ($achievement) {
+                return [
+                    'id' => $achievement->id,
+                    'title' => $achievement->title,
+                    'points' => $achievement->points,
+                    'status' => $achievement->status,
+                    'created_at' => $achievement->created_at,
+                    'category' => $achievement->category ? ['name' => $achievement->category->name] : null,
+                ];
+            });
+
+        return response()->json([
+            'recent_achievements' => $recent,
+            'pending_count' => $pendingCount,
+        ]);
+    }
+
+    /**
      * Get all achievements (for principal to review)
      */
     public function all(Request $request)
