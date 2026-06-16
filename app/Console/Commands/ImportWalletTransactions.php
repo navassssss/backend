@@ -77,7 +77,16 @@ class ImportWalletTransactions extends Command
 
     private function processOpeningBalances($service, $sheetName)
     {
-        // Read Students sheet: Column B = AD NO, Column H = LAST YEAR TOTAL (opening balance)
+        // On INCREMENTAL runs, skip this entire step.
+        // Resetting wallet_balance to opening_balance here was the root cause of
+        // every new transaction being calculated from the opening figure, ignoring
+        // all previously processed transactions.
+        if ($this->option('incremental')) {
+            $this->info('Incremental mode — skipping opening balance reset (preserving running balances).');
+            return;
+        }
+
+        // Full import only: read Students sheet Column B = AD NO, Column H = LAST YEAR TOTAL
         $range = "{$sheetName}!A2:K";
         $response = $service->spreadsheets_values->get($this->spreadsheetId, $range);
         $rows = $response->getValues();
@@ -105,11 +114,9 @@ class ImportWalletTransactions extends Command
             }
 
             if ($student) {
-                $student->opening_balance = $openingBalance;
-                $student->wallet_balance = $openingBalance; // Start with opening balance
-                if (!$this->option('incremental')) {
-                    $student->last_processed_row = null; // Reset for full import
-                }
+                $student->opening_balance    = $openingBalance;
+                $student->wallet_balance     = $openingBalance; // Safe: full import reprocesses all rows
+                $student->last_processed_row = null;           // Reset so all rows are reprocessed
                 $student->save();
             }
 
@@ -119,6 +126,7 @@ class ImportWalletTransactions extends Command
         $bar->finish();
         $this->newLine();
     }
+
 
     private function processTransactions($service, $sheetName)
     {
