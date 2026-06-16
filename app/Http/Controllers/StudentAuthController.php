@@ -105,7 +105,8 @@ class StudentAuthController extends Controller
         // Strictly filter the base attributes needed for frontend
         $data = $student->only([
             'id', 'class_id', 'department_id', 'username', 'roll_number', 'photo', 
-            'total_points', 'wallet_balance', 'monthly_fee', 'is_hifz', 'stars', 'monthly_points'
+            'total_points', 'wallet_balance', 'monthly_fee', 'is_hifz', 'stars', 'monthly_points',
+            'joined_at'
         ]);
         
         // Ensure computed name is included if present
