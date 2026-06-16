@@ -8,14 +8,14 @@ use Illuminate\Http\Request;
 class AuthorizeTelescope
 {
     /**
-     * Handle an incoming request.
+     * Redirect unauthenticated browser visits to the Telescope dashboard
+     * to the dedicated login page.
+     *
+     * This middleware is applied ONLY to the /telescope web route,
+     * NOT to Telescope's internal telescope-api/* routes.
      */
     public function handle(Request $request, Closure $next)
     {
-        if ($request->is('telescopelogin') || $request->is('telescopelogout')) {
-            return $next($request);
-        }
-
         if (session('telescope_authenticated') !== true) {
             return redirect()->route('telescope.login');
         }
