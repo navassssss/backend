@@ -12,6 +12,10 @@ class AuthorizeTelescope
      */
     public function handle(Request $request, Closure $next)
     {
+        if ($request->is('telescope/login') || $request->is('telescope/logout')) {
+            return $next($request);
+        }
+
         if (session('telescope_authenticated') !== true) {
             return redirect()->route('telescope.login');
         }
