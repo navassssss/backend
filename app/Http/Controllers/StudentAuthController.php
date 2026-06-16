@@ -52,16 +52,16 @@ class StudentAuthController extends Controller
         // Load student data with relationships
         $user->load('student.class');
 
-        // Remove circular/redundant relations from the JSON payload
         $student = $user->student;
-        if ($student) {
-            $student->unsetRelation('user');
-        }
-        $user->unsetRelation('student');
+        
+        $userData = $user->only([
+            'id', 'name', 'email', 'username', 'phone', 'role', 
+            'is_vice_principal', 'department', 'avatar'
+        ]);
 
         return response()->json([
             'token' => $token,
-            'user' => $user,
+            'user' => $userData,
             'student' => $student ? $this->buildStudentData($student) : null,
         ]);
     }
@@ -74,15 +74,15 @@ class StudentAuthController extends Controller
         $user = $request->user();
         $user->load('student.class');
 
-        // Remove circular/redundant relations from the JSON payload
         $student = $user->student;
-        if ($student) {
-            $student->unsetRelation('user');
-        }
-        $user->unsetRelation('student');
+
+        $userData = $user->only([
+            'id', 'name', 'email', 'username', 'phone', 'role', 
+            'is_vice_principal', 'department', 'avatar'
+        ]);
 
         return response()->json([
-            'user' => $user,
+            'user' => $userData,
             'student' => $student ? $this->buildStudentData($student) : null,
         ]);
     }
@@ -102,8 +102,21 @@ class StudentAuthController extends Controller
      */
     private function buildStudentData(Student $student): array
     {
-        // Serialize all base attributes + appended computed ones
-        $data = $student->toArray();
+        // Strictly filter the base attributes needed for frontend
+        $data = $student->only([
+            'id', 'class_id', 'department_id', 'username', 'roll_number', 'photo', 
+            'total_points', 'wallet_balance', 'monthly_fee', 'is_hifz', 'stars', 'monthly_points'
+        ]);
+        
+        // Ensure computed name is included if present
+        $data['name'] = $student->name;
+        
+        // Strictly filter class relation if loaded
+        if ($student->relationLoaded('class') && $student->class) {
+            $data['class'] = $student->class->only([
+                'id', 'name', 'department', 'total_points', 'is_hifz'
+            ]);
+        }
 
         // ── Star Thresholds ──────────────────────────────────────────────
         $thresholdsJson = Cache::remember('star_thresholds', 3600, function () {
