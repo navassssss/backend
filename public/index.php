@@ -1,5 +1,8 @@
 <?php
 
+// Fix for Telescope out-of-memory errors on production (e.g. FetchesStackTrace.php)
+ini_set('memory_limit', '256M');
+
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
 
