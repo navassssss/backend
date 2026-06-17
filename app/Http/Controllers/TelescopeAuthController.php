@@ -23,7 +23,7 @@ class TelescopeAuthController extends Controller
      */
     public function login(Request $request)
     {
-        $password = env('TELESCOPE_PASSWORD');
+        $password = config('telescope.password');
 
         if (empty($password)) {
             return back()->withErrors([
