@@ -42,13 +42,13 @@ class StudentAttendanceController extends Controller
         $monthlyStats = AttendanceRecord::where('student_id', $student->id)
             ->join('attendances', 'attendance_records.attendance_id', '=', 'attendances.id')
             ->select(
-                DB::raw('strftime("%Y-%m", attendances.date) as month'),
+                DB::raw('DATE_FORMAT(attendances.date, "%Y-%m") as month'),
                 DB::raw('COUNT(*) as total'),
                 DB::raw('SUM(CASE WHEN attendance_records.status = "present" THEN 1 ELSE 0 END) as present'),
                 DB::raw('SUM(CASE WHEN attendance_records.status = "absent" THEN 1 ELSE 0 END) as absent')
             )
             ->where('attendances.date', '>=', now()->subMonths(6)->format('Y-m-d'))
-            ->groupBy(DB::raw('strftime("%Y-%m", attendances.date)'))
+            ->groupBy(DB::raw('DATE_FORMAT(attendances.date, "%Y-%m")'))
             ->orderBy('month', 'desc')
             ->get()
             ->map(function($stat) {
