@@ -62,7 +62,7 @@ class CCEWorkController extends Controller
             });
 
         // Get subject summaries for the user
-        $subjectsQuery = \App\Models\Subject::with(['classRoom']);
+        $subjectsQuery = \App\Models\Subject::with(['classRoom', 'teacher']);
         
         if ($user->role === 'teacher' || $request->query('filter') === 'my') {
             $subjectsQuery->where('teacher_id', $user->id);
@@ -95,6 +95,7 @@ class CCEWorkController extends Controller
                 'subject_name'    => $subject->name,
                 'max_marks'       => $subject->final_max_marks,
                 'class_name'      => $subject->classRoom->name,
+                'teacher_name'    => $subject->teacher?->name,
                 'total_works'     => $totalWorks,
                 'completed_works' => $completedWorks,
             ];
