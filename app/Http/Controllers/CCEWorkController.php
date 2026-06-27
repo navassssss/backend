@@ -434,4 +434,104 @@ class CCEWorkController extends Controller
             'students' => $studentsData
         ]);
     }
+
+    public function getSubjectDashboard(Request $request, $id)
+    {
+        $subject = \App\Models\Subject::with(['classRoom'])->findOrFail($id);
+
+        $user = $request->user();
+        if ($user->role === 'teacher' && $subject->teacher_id !== $user->id) {
+            abort(403, 'Unauthorized access to this subject.');
+        }
+
+        $works = CCEWork::where('subject_id', $id)
+            ->withCount([
+                'submissions as submissions_count',
+                'submissions as evaluated_count' => fn($q) => $q->where('status', 'evaluated'),
+            ])
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $students = Student::where('class_id', $subject->class_id)
+            ->with(['user'])
+            ->orderBy('username', 'asc')
+            ->get();
+
+        $workIds = $works->pluck('id');
+        $allSubmissions = CCESubmission::whereIn('work_id', $workIds)
+            ->whereNotNull('marks_obtained')
+            ->where('status', 'evaluated')
+            ->get()
+            ->groupBy('student_id');
+
+        $studentsData = $students->map(function($student) use ($works, $allSubmissions, $subject) {
+            $studentSubmissions = $allSubmissions->get($student->id, collect());
+            
+            $marksMap = [];
+            foreach ($studentSubmissions as $submission) {
+                $marksMap[$submission->work_id] = $submission->marks_obtained;
+            }
+
+            $subjectObtained = 0;
+            $subjectTotal = 0;
+
+            foreach ($works as $work) {
+                $subjectTotal += $work->max_marks;
+                if (isset($marksMap[$work->id])) {
+                    $subjectObtained += $marksMap[$work->id];
+                }
+            }
+
+            $finalMaxMarks = $subject->final_max_marks ?? $subjectTotal;
+            $convertedObtained = $subjectTotal > 0 
+                ? ($subjectObtained / $subjectTotal) * $finalMaxMarks 
+                : 0;
+
+            $percentage = $finalMaxMarks > 0 ? ($convertedObtained / $finalMaxMarks) * 100 : 0;
+            
+            $grade = 'F';
+            if ($percentage >= 90) $grade = 'A+';
+            elseif ($percentage >= 80) $grade = 'A';
+            elseif ($percentage >= 70) $grade = 'B';
+            elseif ($percentage >= 60) $grade = 'C';
+            elseif ($percentage >= 50) $grade = 'D';
+
+            return [
+                'id' => $student->id,
+                'name' => $student->user->name ?? 'Unknown',
+                'roll_number' => $student->username,
+                'obtained' => round($convertedObtained, 2),
+                'total' => $finalMaxMarks,
+                'percentage' => round($percentage, 2),
+                'grade' => $grade,
+                'marks' => $marksMap
+            ];
+        })->toArray();
+
+        return response()->json([
+            'subject' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+                'class_name' => $subject->classRoom->name,
+                'max_marks' => $subject->final_max_marks,
+            ],
+            'works' => $works->map(function($work) {
+                return [
+                    'id' => $work->id,
+                    'title' => $work->title,
+                    'description' => $work->description,
+                    'level' => $work->level,
+                    'week' => $work->week,
+                    'toolMethod' => $work->tool_method,
+                    'submissionType' => $work->submission_type,
+                    'issuedDate' => $work->issued_date ? $work->issued_date->format('Y-m-d') : null,
+                    'dueDate' => $work->due_date ? $work->due_date->format('Y-m-d') : null,
+                    'maxMarks' => $work->max_marks,
+                    'submissionsCount' => $work->submissions_count,
+                    'evaluatedCount' => $work->evaluated_count,
+                ];
+            }),
+            'students' => $studentsData
+        ]);
+    }
 }

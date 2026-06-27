@@ -170,6 +170,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/subjects/{id}/toggle-lock', [App\Http\Controllers\SubjectController::class, 'toggleLock']);
 
     // CCE Works
+    Route::get('/cce/subjects/{id}/dashboard', [App\Http\Controllers\CCEWorkController::class, 'getSubjectDashboard']);
     Route::get('/cce/works', [App\Http\Controllers\CCEWorkController::class, 'index']);
     Route::post('/cce/works', [App\Http\Controllers\CCEWorkController::class, 'store']);
     Route::get('/cce/works/{id}', [App\Http\Controllers\CCEWorkController::class, 'show']);
