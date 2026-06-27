@@ -289,28 +289,41 @@ class SubjectController extends Controller
 
         $totalPossibleMarks = $works->sum('max_marks');
 
-        $obtainedMap = \DB::table('cce_submissions as s')
+        $submissions = \DB::table('cce_submissions as s')
             ->join('cce_works as w', 's.work_id', '=', 'w.id')
-            ->select('s.student_id', \DB::raw('SUM(s.marks_obtained) as total_obtained'))
+            ->select('s.student_id', 's.work_id', 's.marks_obtained')
             ->where('w.subject_id', $id)
-            ->whereNotNull('s.marks_obtained')
             ->whereIn('s.student_id', $studentIds)
-            ->groupBy('s.student_id')
-            ->pluck('total_obtained', 'student_id');
+            ->get();
+
+        $submissionsByStudent = $submissions->groupBy('student_id');
 
         $students = \App\Models\Student::whereIn('id', $studentIds)
             ->with('user:id,name')
             ->select('id', 'user_id', 'username')
             ->get();
 
-        $studentMarks = $students->map(function ($student) use ($obtainedMap, $totalPossibleMarks, $subject) {
-            $totalObtained   = (float) ($obtainedMap[$student->id] ?? 0);
+        $studentMarks = $students->map(function ($student) use ($submissionsByStudent, $totalPossibleMarks, $subject, $works) {
+            $studentSubs = $submissionsByStudent->get($student->id, collect());
+            
+            $workMarks = [];
+            $totalObtained = 0;
+            
+            foreach($works as $w) {
+                $sub = $studentSubs->firstWhere('work_id', $w->id);
+                $mark = ($sub && $sub->marks_obtained !== null) ? (float)$sub->marks_obtained : null;
+                $workMarks['work_' . $w->id] = $mark;
+                if ($mark !== null) {
+                    $totalObtained += $mark;
+                }
+            }
+
             $aggregatedMarks = $totalPossibleMarks > 0
                 ? ($totalObtained / $totalPossibleMarks) * $subject->final_max_marks : 0;
             $percentage = $totalPossibleMarks > 0
                 ? ($totalObtained / $totalPossibleMarks) * 100 : 0;
 
-            return [
+            return array_merge([
                 'student_id'       => $student->id,
                 'student_name'     => $student->user->name,
                 'username'         => $student->username,
@@ -318,7 +331,7 @@ class SubjectController extends Controller
                 'total_possible'   => $totalPossibleMarks,
                 'aggregated_marks' => round($aggregatedMarks, 2),
                 'percentage'       => round($percentage, 2),
-            ];
+            ], $workMarks);
         })->sortByDesc('aggregated_marks')->values();
 
         return response()->json([
