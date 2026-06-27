@@ -14,10 +14,17 @@ class CCEWorkController extends Controller
     {
         $user = $request->user();
         $query = CCEWork::with(['subject.classRoom', 'subject.teacher'])
-            ->whereHas('subject')
-            ->visibleTo($user);
-
-
+            ->whereHas('subject');
+            
+        if ($user->role === 'teacher' || $request->query('filter') === 'my') {
+            $query->whereHas('subject', function($q) use ($user) {
+                $q->where('teacher_id', $user->id);
+            });
+        } elseif ($user->role === 'principal') {
+            // Can see all works
+        } else {
+            $query->visibleTo($user);
+        }
         // Additional filters from request
         if ($request->has('subject_id')) {
             $query->where('subject_id', $request->subject_id);
@@ -57,7 +64,7 @@ class CCEWorkController extends Controller
         // Get subject summaries for the user
         $subjectsQuery = \App\Models\Subject::with(['classRoom']);
         
-        if ($user->role === 'teacher') {
+        if ($user->role === 'teacher' || $request->query('filter') === 'my') {
             $subjectsQuery->where('teacher_id', $user->id);
         }
         
