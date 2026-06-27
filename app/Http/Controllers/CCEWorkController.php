@@ -452,7 +452,9 @@ class CCEWorkController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
-        $students = Student::where('class_id', $subject->class_id)
+        $studentIds = $subject->effectiveStudentIds();
+
+        $students = Student::whereIn('id', $studentIds)
             ->with(['user'])
             ->orderBy('username', 'asc')
             ->get();
