@@ -438,7 +438,7 @@ class CCEWorkController extends Controller
 
     public function getSubjectDashboard(Request $request, $id)
     {
-        $subject = \App\Models\Subject::with(['classRoom'])->findOrFail($id);
+        $subject = \App\Models\Subject::with(['classRoom', 'department'])->findOrFail($id);
 
         $user = $request->user();
         if ($user->role === 'teacher' && $subject->teacher_id !== $user->id) {
@@ -516,6 +516,7 @@ class CCEWorkController extends Controller
                 'id' => $subject->id,
                 'name' => $subject->name,
                 'class_name' => $subject->classRoom->name,
+                'department_name' => $subject->department ? $subject->department->name : null,
                 'max_marks' => $subject->final_max_marks,
             ],
             'works' => $works->map(function($work) {
