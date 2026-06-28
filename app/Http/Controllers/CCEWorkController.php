@@ -13,7 +13,7 @@ class CCEWorkController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = CCEWork::with(['subject.classRoom', 'subject.teacher'])
+        $query = CCEWork::with(['subject.classRoom', 'subject.teacher', 'subject.department'])
             ->whereHas('subject');
             
         if ($user->role === 'teacher' || $request->query('filter') === 'my') {
@@ -49,6 +49,7 @@ class CCEWorkController extends Controller
                     'week'            => $work->week,
                     'subjectId'       => $work->subject_id,
                     'subjectName'     => $work->subject?->name,
+                    'departmentName'  => $work->subject?->department?->name,
                     'className'       => $work->subject?->classRoom?->name,
                     'teacherName'     => $work->subject?->teacher?->name,
                     'toolMethod'      => $work->tool_method,
@@ -62,7 +63,7 @@ class CCEWorkController extends Controller
             });
 
         // Get subject summaries for the user
-        $subjectsQuery = \App\Models\Subject::with(['classRoom', 'teacher']);
+        $subjectsQuery = \App\Models\Subject::with(['classRoom', 'teacher', 'department']);
         
         if ($user->role === 'teacher' || $request->query('filter') === 'my') {
             $subjectsQuery->where('teacher_id', $user->id);
@@ -93,6 +94,7 @@ class CCEWorkController extends Controller
             return [
                 'subject_id'      => $subject->id,
                 'subject_name'    => $subject->name,
+                'department_name' => $subject->department?->name,
                 'max_marks'       => $subject->final_max_marks,
                 'class_name'      => $subject->classRoom->name,
                 'teacher_name'    => $subject->teacher?->name,
@@ -149,6 +151,7 @@ class CCEWorkController extends Controller
             'description' => $work->description,
             'level' => $work->level,
             'week' => $work->week,
+            'subjectId' => $work->subject_id,
             'subjectName' => $work->subject->name,
             'className' => $work->subject->classRoom->name,
             'teacherId' => $work->subject->teacher_id,
