@@ -120,7 +120,7 @@ class CCESubmissionController extends Controller
                 
                 $evaluatedSubs = $subs->where('status', 'evaluated');
                 $obtained = $evaluatedSubs->sum('marks_obtained');
-                $total = $evaluatedSubs->sum(function($sub) {
+                $total = $subs->sum(function($sub) {
                     return $sub->work->max_marks;
                 });
                 
