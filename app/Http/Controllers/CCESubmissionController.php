@@ -81,7 +81,7 @@ class CCESubmissionController extends Controller
         }
 
         $submissions = CCESubmission::where('student_id', $student->id)
-            ->with(['work.subject'])
+            ->with(['work.subject.department'])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function($sub) {
@@ -89,11 +89,12 @@ class CCESubmissionController extends Controller
                     'id' => $sub->id,
                     'workId' => $sub->work_id,
                     'title' => $sub->work->title,
-                    'subjectName' => $sub->work->subject->name,
+                    'subjectName' => $sub->work->subject->name . ($sub->work->subject->department ? ' (' . $sub->work->subject->department->name . ')' : ''),
                     'subjectId' => $sub->work->subject_id,
                     'level' => $sub->work->level,
                     'week' => $sub->work->week,
                     'toolMethod' => $sub->work->tool_method,
+                    'issuedDate' => $sub->work->issued_date ? $sub->work->issued_date->format('Y-m-d') : null,
                     'dueDate' => $sub->work->due_date->format('Y-m-d'),
                     'maxMarks' => $sub->work->max_marks,
                     'submissionType' => $sub->work->submission_type,
@@ -107,7 +108,7 @@ class CCESubmissionController extends Controller
 
         // Calculate subject-wise aggregation
         $subjectMarks = CCESubmission::where('student_id', $student->id)
-            ->with('work.subject')
+            ->with('work.subject.department')
             ->get()
             ->groupBy(function($sub) {
                 return $sub->work->subject_id;
@@ -129,7 +130,7 @@ class CCESubmissionController extends Controller
                 
                 return [
                     'subjectId' => $subjectId,
-                    'subjectName' => $subject->name,
+                    'subjectName' => $subject->name . ($subject->department ? ' (' . $subject->department->name . ')' : ''),
                     'totalWorks' => $totalWorks,
                     'pendingWorks' => $pendingWorks,
                     'marksObtained' => round($obtained, 2),

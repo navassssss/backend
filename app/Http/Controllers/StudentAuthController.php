@@ -50,7 +50,7 @@ class StudentAuthController extends Controller
         $token = $user->createToken('student-auth-token')->plainTextToken;
 
         // Load student data with relationships
-        $user->load('student.class');
+        $user->load('student.class', 'student.department');
 
         $student = $user->student;
         
@@ -72,7 +72,7 @@ class StudentAuthController extends Controller
     public function me(Request $request)
     {
         $user = $request->user();
-        $user->load('student.class');
+        $user->load('student.class', 'student.department');
 
         $student = $user->student;
 
@@ -117,6 +117,10 @@ class StudentAuthController extends Controller
             $data['class'] = $student->class->only([
                 'id', 'name', 'department', 'total_points', 'is_hifz'
             ]);
+        }
+
+        if ($student->relationLoaded('department') && $student->department) {
+            $data['department_name'] = $student->department->name;
         }
 
         // ── Star Thresholds ──────────────────────────────────────────────
