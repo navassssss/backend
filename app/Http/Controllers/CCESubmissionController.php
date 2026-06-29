@@ -92,6 +92,8 @@ class CCESubmissionController extends Controller
                     'subjectName' => $sub->work->subject->name,
                     'subjectId' => $sub->work->subject_id,
                     'level' => $sub->work->level,
+                    'week' => $sub->work->week,
+                    'toolMethod' => $sub->work->tool_method,
                     'dueDate' => $sub->work->due_date->format('Y-m-d'),
                     'maxMarks' => $sub->work->max_marks,
                     'submissionType' => $sub->work->submission_type,
