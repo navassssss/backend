@@ -105,7 +105,6 @@ class CCESubmissionController extends Controller
 
         // Calculate subject-wise aggregation
         $subjectMarks = CCESubmission::where('student_id', $student->id)
-            ->where('status', 'evaluated')
             ->with('work.subject')
             ->get()
             ->groupBy(function($sub) {
@@ -113,16 +112,28 @@ class CCESubmissionController extends Controller
             })
             ->map(function($subs, $subjectId) {
                 $subject = $subs->first()->work->subject;
-                $obtained = $subs->sum('marks_obtained');
-                $total = $subs->sum(function($sub) {
+                
+                $totalWorks = $subs->count();
+                $pendingWorks = $subs->where('status', 'pending')->count();
+                
+                $evaluatedSubs = $subs->where('status', 'evaluated');
+                $obtained = $evaluatedSubs->sum('marks_obtained');
+                $total = $evaluatedSubs->sum(function($sub) {
                     return $sub->work->max_marks;
                 });
+                
+                $finalMaxMarks = $subject->final_max_marks ?? clone $total; // fallback to total if no final max
+                $convertedMarks = $total > 0 && $subject->final_max_marks ? ($obtained / $total) * $subject->final_max_marks : $obtained;
                 
                 return [
                     'subjectId' => $subjectId,
                     'subjectName' => $subject->name,
-                    'marksObtained' => $obtained,
+                    'totalWorks' => $totalWorks,
+                    'pendingWorks' => $pendingWorks,
+                    'marksObtained' => round($obtained, 2),
                     'totalMarks' => $total,
+                    'convertedMarks' => round($convertedMarks, 2),
+                    'finalMaxMarks' => $finalMaxMarks,
                     'percentage' => $total > 0 ? round(($obtained / $total) * 100, 2) : 0
                 ];
             })->values();
