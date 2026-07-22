@@ -32,7 +32,7 @@ class Student extends Model
         'is_hifz'         => 'boolean',
     ];
 
-    protected $appends = ['stars', 'monthly_points', 'name'];
+    protected $appends = ['stars', 'monthly_points', 'name', 'department_name'];
 
     protected $attributes = [
         'wallet_balance' => 0.00,
@@ -40,6 +40,11 @@ class Student extends Model
         'monthly_fee' => 0.00,
         'total_points' => 0,
     ];
+
+    public function getDepartmentNameAttribute(): ?string
+    {
+        return $this->department?->name;
+    }
 
     public function department()
     {

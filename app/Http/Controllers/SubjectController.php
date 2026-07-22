@@ -54,6 +54,7 @@ class SubjectController extends Controller
                     'id'                 => $subject->id,
                     'name'               => $subject->name,
                     'code'               => $subject->code,
+                    'departmentName'     => $subject->department?->name,
                     'className'          => $subject->classRoom->name,
                     'classId'            => $subject->class_id,
                     'teacherName'        => $subject->teacher->name,
