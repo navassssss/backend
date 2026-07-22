@@ -499,17 +499,21 @@ class FeeManagementController extends Controller
     }
 
     /**
-     * Get daily collection report
+     * Get daily or date-range collection report
      */
-    public function getDailyReport($date)
+    public function getDailyReport(Request $request, $date = null)
     {
+        $startDate = $request->query('start_date', $date ?? $request->query('date', now()->format('Y-m-d')));
+        $endDate   = $request->query('end_date', $startDate);
+
         $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
-            ->whereDate('payment_date', $date)
+            ->whereBetween('payment_date', [$startDate, $endDate])
             ->where(function ($query) {
                 $query->whereNull('remarks')
                       ->orWhere('remarks', '!=', 'Pre-paid bulk import starting Mar 2026');
             })
-            ->latest() // Order by most recent first
+            ->latest('payment_date')
+            ->latest()
             ->get();
 
         $report = $payments->map(function ($payment) {
@@ -525,6 +529,7 @@ class FeeManagementController extends Controller
                 'studentName' => $payment->student->user->name ?? 'Unknown',
                 'className' => $payment->student->class->name ?? 'Unknown',
                 'amount' => (float) $payment->paid_amount,
+                'date' => $payment->payment_date,
                 'receiptIssued' => (bool) $payment->receipt_issued,
                 'remarks' => $payment->remarks,
                 'enteredBy' => $payment->enteredBy->name ?? 'System',
@@ -534,7 +539,10 @@ class FeeManagementController extends Controller
         });
 
         return response()->json([
-            'date' => $date,
+            'date' => $startDate === $endDate ? $startDate : null,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'is_range' => $startDate !== $endDate,
             'total_students' => $payments->unique('student_id')->count(),
             'total_amount' => (float) $payments->sum('paid_amount'),
             'payments' => $report,
