@@ -3,6 +3,7 @@
 use App\Http\Controllers\AchievementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ClassRoomController;
+use App\Http\Controllers\CommitteeHandoverController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DutyController;
 use App\Http\Controllers\FeeManagementController;
@@ -215,6 +216,12 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     
     // Fee Utilities
     Route::get('/fees/classes', [FeeManagementController::class, 'getClasses']);
+
+    // Committee Handovers
+    Route::get('/fees/handovers', [CommitteeHandoverController::class, 'index']);
+    Route::get('/fees/handovers/summary', [CommitteeHandoverController::class, 'summary']);
+    Route::post('/fees/handovers', [CommitteeHandoverController::class, 'store']);
+    Route::delete('/fees/handovers/{id}', [CommitteeHandoverController::class, 'destroy']);
 
     // ── Push Notifications ──────────────────────────────────────
     Route::post('/push/subscribe',   [PushSubscriptionController::class, 'subscribe']);
