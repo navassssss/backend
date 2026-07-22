@@ -506,6 +506,12 @@ class FeeManagementController extends Controller
         $startDate = $request->query('start_date', $date ?? $request->query('date', now()->format('Y-m-d')));
         $endDate   = $request->query('end_date', $startDate);
 
+        if ($startDate > $endDate) {
+            $temp = $startDate;
+            $startDate = $endDate;
+            $endDate = $temp;
+        }
+
         $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
             ->whereBetween('payment_date', [$startDate, $endDate])
             ->where(function ($query) {
@@ -544,6 +550,7 @@ class FeeManagementController extends Controller
             'end_date' => $endDate,
             'is_range' => $startDate !== $endDate,
             'total_students' => $payments->unique('student_id')->count(),
+            'total_entries' => $payments->count(),
             'total_amount' => (float) $payments->sum('paid_amount'),
             'payments' => $report,
         ]);
