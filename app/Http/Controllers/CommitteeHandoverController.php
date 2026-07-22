@@ -59,18 +59,24 @@ class CommitteeHandoverController extends Controller
      */
     public function summary(Request $request)
     {
-        $startDate = $request->query('start_date');
-        $endDate = $request->query('end_date');
-
-        // Total fee collections query
-        $feeQuery = FeePayment::query()
+        // All-time fee collections (excluding bulk imports)
+        $totalCollected = (float) FeePayment::query()
             ->where(function ($q) {
                 $q->whereNull('remarks')
                   ->orWhere('remarks', 'not like', '%Pre-paid bulk import%');
-            });
+            })
+            ->sum('paid_amount');
 
-        // Total handovers query
-        $handoverQuery = CommitteeHandover::query();
+        // All-time committee handovers
+        $totalHandedOver = (float) CommitteeHandover::query()->sum('amount');
+        $balanceInHand = $totalCollected - $totalHandedOver;
+        $totalHandoversCount = CommitteeHandover::query()->count();
+
+        // Optional period filtered stats
+        $periodCollected = null;
+        $periodHandedOver = null;
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
 
         if ($startDate && $endDate) {
             if ($startDate > $endDate) {
@@ -78,14 +84,18 @@ class CommitteeHandoverController extends Controller
                 $startDate = $endDate;
                 $endDate = $temp;
             }
-            $feeQuery->whereBetween('payment_date', [$startDate, $endDate]);
-            $handoverQuery->whereBetween('handover_date', [$startDate, $endDate]);
-        }
+            $periodCollected = (float) FeePayment::query()
+                ->where(function ($q) {
+                    $q->whereNull('remarks')
+                      ->orWhere('remarks', 'not like', '%Pre-paid bulk import%');
+                })
+                ->whereBetween('payment_date', [$startDate, $endDate])
+                ->sum('paid_amount');
 
-        $totalCollected = (float) $feeQuery->sum('paid_amount');
-        $totalHandedOver = (float) $handoverQuery->sum('amount');
-        $balanceInHand = $totalCollected - $totalHandedOver;
-        $totalHandoversCount = $handoverQuery->count();
+            $periodHandedOver = (float) CommitteeHandover::query()
+                ->whereBetween('handover_date', [$startDate, $endDate])
+                ->sum('amount');
+        }
 
         return response()->json([
             'success' => true,
@@ -94,6 +104,8 @@ class CommitteeHandoverController extends Controller
                 'total_handed_over' => $totalHandedOver,
                 'balance_in_hand' => $balanceInHand,
                 'total_handovers_count' => $totalHandoversCount,
+                'period_collected' => $periodCollected,
+                'period_handed_over' => $periodHandedOver,
                 'start_date' => $startDate,
                 'end_date' => $endDate,
             ],
