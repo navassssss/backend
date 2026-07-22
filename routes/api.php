@@ -205,6 +205,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/fees/plans/class', [FeeManagementController::class, 'setClassFee']);
     Route::post('/fees/plans/student', [FeeManagementController::class, 'setStudentFeeRange']);
     Route::post('/fees/students/{studentId}/monthly-fee', [FeeManagementController::class, 'updateStudentMonthlyFee']);
+    Route::post('/fees/students/{studentId}/reallocate', [FeeManagementController::class, 'reallocatePayments']);
     
     // Reports
     Route::get('/fees/reports/summary', [FeeManagementController::class, 'getSummary']);

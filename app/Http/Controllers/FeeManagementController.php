@@ -403,6 +403,26 @@ class FeeManagementController extends Controller
     }
 
     /**
+     * Reallocate payments / Fix fee gap for a specific student
+     */
+    public function reallocatePayments($studentId)
+    {
+        try {
+            $student = Student::findOrFail($studentId);
+            $this->feeService->reallocateStudentPayments($student->id);
+
+            return response()->json([
+                'message' => 'Payments reallocated and fee gap fixed successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to reallocate payments',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Get overall financial summary
      */
     public function getSummary(Request $request)
