@@ -211,14 +211,54 @@ class StudentController extends Controller
     public function update(Request $request)
     {
         $student = $request->user()->student;
+        $user = $request->user();
 
         $validated = $request->validate([
             'photo' => 'nullable|string',
+            'email' => 'required|email|unique:users,email,' . $user->id,
         ]);
 
-        $student->update($validated);
+        if (isset($validated['photo'])) {
+            $student->update(['photo' => $validated['photo']]);
+        }
 
-        return response()->json($student);
+        if (isset($validated['email'])) {
+            $user->update(['email' => $validated['email']]);
+        }
+
+        $student->load(['class', 'department', 'user']);
+
+        // Build data structure compatible with StudentAuthContext
+        $userData = $user->only([
+            'id', 'name', 'email', 'username', 'phone', 'role', 
+            'is_vice_principal', 'department', 'avatar'
+        ]);
+
+        return response()->json([
+            'user' => $userData,
+            'student' => $student,
+        ]);
+    }
+
+    /**
+     * Change current student's password
+     */
+    public function changePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'current_password' => 'required',
+            'new_password'     => 'required|min:8|confirmed',
+        ]);
+
+        if (!\Illuminate\Support\Facades\Hash::check($request->current_password, $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect'], 422);
+        }
+
+        $user->update(['password' => \Illuminate\Support\Facades\Hash::make($request->new_password)]);
+
+        return response()->json(['message' => 'Password changed successfully']);
     }
 
     /**

@@ -261,6 +261,7 @@ Route::middleware('auth:sanctum')->prefix('student')->group(function () {
     // Profile
     Route::get('/profile', [StudentController::class, 'profile']);
     Route::put('/profile', [StudentController::class, 'update']);
+    Route::post('/change-password', [StudentController::class, 'changePassword']);
 
     // Achievements
     Route::get('/achievements/summary', [AchievementController::class, 'summary']);
