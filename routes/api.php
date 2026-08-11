@@ -268,6 +268,7 @@ Route::middleware('auth:sanctum')->prefix('student')->group(function () {
     Route::get('/achievements', [AchievementController::class, 'index']);
     Route::post('/achievements', [AchievementController::class, 'store']);
     Route::get('/achievement-categories', [AchievementController::class, 'categories']);
+    Route::delete('/achievements/{achievement}', [AchievementController::class, 'destroy']);
 
     // Student Announcements
     Route::get('/announcements', [App\Http\Controllers\AnnouncementController::class, 'studentIndex']);

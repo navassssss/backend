@@ -288,4 +288,36 @@ class AchievementController extends Controller
 
         return response()->json($achievement);
     }
+
+    /**
+     * Delete achievement (Student's own pending or rejected only)
+     */
+    public function destroy(Request $request, Achievement $achievement)
+    {
+        $student = $request->user()->student;
+
+        if (!$student) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        // Ensure the achievement belongs to the authenticated student
+        if ($achievement->student_id !== $student->id) {
+            return response()->json(['message' => 'Unauthorized. This achievement does not belong to you.'], 403);
+        }
+
+        // Ensure the achievement is NOT approved
+        if ($achievement->status === 'approved') {
+            return response()->json(['message' => 'Approved achievements cannot be deleted.'], 422);
+        }
+
+        // Delete associated attachments from storage
+        foreach ($achievement->attachments as $attachment) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($attachment->file_path);
+            $attachment->delete();
+        }
+
+        $achievement->delete();
+
+        return response()->json(['message' => 'Achievement deleted successfully']);
+    }
 }
