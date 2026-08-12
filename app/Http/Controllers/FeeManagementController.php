@@ -107,7 +107,7 @@ class FeeManagementController extends Controller
                             }
                         }
 
-                        if ($hasOverpaid && $hasUnpaid) {
+                        if ($hasOverpaid) {
                             $hasGap = true;
                         }
 
@@ -197,7 +197,7 @@ class FeeManagementController extends Controller
                 }
             }
 
-            if ($hasOverpaid && $hasUnpaid) {
+            if ($hasOverpaid) {
                 $hasGap = true;
             }
 
