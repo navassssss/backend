@@ -54,14 +54,75 @@ class FeeManagementController extends Controller
                     $this->feeService->ensureFeePlans($id);
                 }
 
-                // Get status for all matching
-                $statusMap = $this->feeService->batchGetStudentSummary($allMatchingIds);
-                
                 $filteredIds = [];
-                foreach ($allMatchingIds as $id) {
-                    $status = $statusMap[$id]['status'] ?? 'paid';
-                    if ($status === $statusFilter) {
-                        $filteredIds[] = $id;
+
+                if ($statusFilter === 'gap') {
+                    // Fetch all monthly fee plans for matching students in one query
+                    $plans = DB::table('monthly_fee_plans')
+                        ->whereIn('student_id', $allMatchingIds)
+                        ->orderBy('year', 'asc')
+                        ->orderBy('month', 'asc')
+                        ->get()
+                        ->groupBy('student_id');
+
+                    // Fetch all payment allocations grouped by student, year, month in one query
+                    $allocations = DB::table('fee_payment_allocations')
+                        ->select('student_id', 'year', 'month', DB::raw('SUM(allocated_amount) as total_allocated'))
+                        ->whereIn('student_id', $allMatchingIds)
+                        ->groupBy('student_id', 'year', 'month')
+                        ->get()
+                        ->groupBy('student_id');
+
+                    foreach ($allMatchingIds as $id) {
+                        $studentPlans = $plans->get($id, collect());
+                        $studentAllocations = $allocations->get($id, collect());
+
+                        // Map allocations for quick lookup: "year-month" => amount
+                        $allocationLookup = [];
+                        foreach ($studentAllocations as $alloc) {
+                            $allocationLookup["{$alloc->year}-{$alloc->month}"] = (float) $alloc->total_allocated;
+                        }
+
+                        $hasGap = false;
+                        $foundUnpaid = false;
+                        $hasOverpaid = false;
+                        $hasUnpaid = false;
+
+                        foreach ($studentPlans as $plan) {
+                            $paidAmount = $allocationLookup["{$plan->year}-{$plan->month}"] ?? 0.0;
+                            $payable = (float) $plan->payable_amount;
+                            $balance = max(0, $payable - $paidAmount);
+
+                            if ($balance > 0) {
+                                $foundUnpaid = true;
+                                $hasUnpaid = true;
+                            }
+                            
+                            if ($paidAmount > 0 && $foundUnpaid && $balance == 0) {
+                                $hasGap = true;
+                            }
+
+                            if ($paidAmount > $payable) {
+                                $hasOverpaid = true;
+                            }
+                        }
+
+                        if ($hasOverpaid && $hasUnpaid) {
+                            $hasGap = true;
+                        }
+
+                        if ($hasGap) {
+                            $filteredIds[] = $id;
+                        }
+                    }
+                } else {
+                    // Get status for all matching
+                    $statusMap = $this->feeService->batchGetStudentSummary($allMatchingIds);
+                    foreach ($allMatchingIds as $id) {
+                        $status = $statusMap[$id]['status'] ?? 'paid';
+                        if ($status === $statusFilter) {
+                            $filteredIds[] = $id;
+                        }
                     }
                 }
                 
@@ -86,8 +147,60 @@ class FeeManagementController extends Controller
         // Batch get status for the visible page
         $finalStatusMap = $this->feeService->batchGetStudentSummary($visibleStudentIds);
 
-        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) use ($finalStatusMap) {
+        // Preload plans and allocations for the visible page to avoid N+1 queries in the map loop
+        $visiblePlans = DB::table('monthly_fee_plans')
+            ->whereIn('student_id', $visibleStudentIds)
+            ->orderBy('year', 'asc')
+            ->orderBy('month', 'asc')
+            ->get()
+            ->groupBy('student_id');
+
+        $visibleAllocations = DB::table('fee_payment_allocations')
+            ->select('student_id', 'year', 'month', DB::raw('SUM(allocated_amount) as total_allocated'))
+            ->whereIn('student_id', $visibleStudentIds)
+            ->groupBy('student_id', 'year', 'month')
+            ->get()
+            ->groupBy('student_id');
+
+        $studentsWithStatus = collect($paginatedStudents->items())->map(function ($student) use ($finalStatusMap, $visiblePlans, $visibleAllocations) {
             $s = $finalStatusMap[$student->id] ?? ['total_expected' => 0, 'total_paid' => 0, 'total_pending' => 0, 'status' => 'paid', 'last_payment_date' => null];
+            
+            $studentPlans = $visiblePlans->get($student->id, collect());
+            $studentAllocations = $visibleAllocations->get($student->id, collect());
+
+            $allocationLookup = [];
+            foreach ($studentAllocations as $alloc) {
+                $allocationLookup["{$alloc->year}-{$alloc->month}"] = (float) $alloc->total_allocated;
+            }
+
+            $hasGap = false;
+            $foundUnpaid = false;
+            $hasOverpaid = false;
+            $hasUnpaid = false;
+
+            foreach ($studentPlans as $plan) {
+                $paidAmount = $allocationLookup["{$plan->year}-{$plan->month}"] ?? 0.0;
+                $payable = (float) $plan->payable_amount;
+                $balance = max(0, $payable - $paidAmount);
+
+                if ($balance > 0) {
+                    $foundUnpaid = true;
+                    $hasUnpaid = true;
+                }
+                
+                if ($paidAmount > 0 && $foundUnpaid && $balance == 0) {
+                    $hasGap = true;
+                }
+
+                if ($paidAmount > $payable) {
+                    $hasOverpaid = true;
+                }
+            }
+
+            if ($hasOverpaid && $hasUnpaid) {
+                $hasGap = true;
+            }
+
             return [
                 'id'                => $student->id,
                 'name'              => $student->user->name,
@@ -97,7 +210,7 @@ class FeeManagementController extends Controller
                 'total_pending'     => $s['total_pending'],
                 'total_paid'        => $s['total_paid'],
                 'last_payment_date' => $s['last_payment_date'],
-                'status'            => $s['status'],
+                'status'            => $hasGap ? 'gap' : $s['status'],
             ];
         });
 
