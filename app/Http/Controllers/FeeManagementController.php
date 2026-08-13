@@ -794,6 +794,32 @@ class FeeManagementController extends Controller
     }
 
     /**
+     * Delete a receipt batch, reset associated payments status.
+     */
+    public function deleteReceiptBatch($batchId)
+    {
+        $batch = \App\Models\ReceiptBatch::findOrFail($batchId);
+
+        return DB::transaction(function () use ($batch) {
+            $paymentIds = $batch->payments()->pluck('fee_payments.id')->toArray();
+
+            // Set receipt_issued back to false for these payments
+            if (!empty($paymentIds)) {
+                FeePayment::whereIn('id', $paymentIds)->update([
+                    'receipt_issued' => false,
+                ]);
+            }
+
+            // Delete the batch (cascade will delete pivot entries)
+            $batch->delete();
+
+            return response()->json([
+                'message' => 'Receipt batch deleted successfully. Associated payments are now pending print again.',
+            ]);
+        });
+    }
+
+    /**
      * Helper to format payments for receipt PDF rendering.
      */
     private function formatPaymentsForReceipts($payments)

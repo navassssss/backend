@@ -206,6 +206,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::get('/fees/receipt-batches', [FeeManagementController::class, 'getReceiptBatches']);
     Route::post('/fees/receipt-batches', [FeeManagementController::class, 'createReceiptBatch']);
     Route::get('/fees/receipt-batches/{batchId}', [FeeManagementController::class, 'getReceiptBatch']);
+    Route::delete('/fees/receipt-batches/{batchId}', [FeeManagementController::class, 'deleteReceiptBatch']);
     
     // Fee Plans
     Route::post('/fees/plans/class', [FeeManagementController::class, 'setClassFee']);
