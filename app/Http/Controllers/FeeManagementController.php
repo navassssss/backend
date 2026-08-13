@@ -619,8 +619,8 @@ class FeeManagementController extends Controller
         $startDate = $request->query('start_date', $date ?? $request->query('date'));
         $endDate   = $request->query('end_date', $startDate);
 
-        // If no dates are specified and no receipt_issued filter is present, default to today
-        if (!$startDate && !$request->has('receipt_issued')) {
+        // If no dates/filters are specified and no pagination/search is present, default to today
+        if (!$startDate && !$request->has('receipt_issued') && !$request->has('per_page') && !$request->has('search') && !$request->has('class_name')) {
             $startDate = now()->format('Y-m-d');
             $endDate = $startDate;
         }
