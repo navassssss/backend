@@ -644,9 +644,35 @@ class FeeManagementController extends Controller
             $query->where('receipt_issued', $request->boolean('receipt_issued'));
         }
 
-        $payments = $query->latest('payment_date')
-            ->latest()
-            ->get();
+        // Apply search query (student name or admission number)
+        $search = $request->query('search');
+        if (!empty($search)) {
+            $query->whereHas('student', function ($studentQuery) use ($search) {
+                $studentQuery->where('username', 'like', "%{$search}%")
+                    ->orWhereHas('user', function ($userQuery) use ($search) {
+                        $userQuery->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        // Apply class name filter
+        $className = $request->query('class_name');
+        if (!empty($className)) {
+            $query->whereHas('student.class', function ($classQuery) use ($className) {
+                $classQuery->where('name', $className);
+            });
+        }
+
+        $query->latest('payment_date')->latest();
+
+        $perPage = $request->input('per_page');
+
+        if ($perPage) {
+            $paginated = $query->paginate($perPage);
+            $payments = collect($paginated->items());
+        } else {
+            $payments = $query->get();
+        }
 
         $report = $payments->map(function ($payment) {
             // Format allocations as "Jan(200), Feb(100)"
@@ -659,6 +685,7 @@ class FeeManagementController extends Controller
             return [
                 'paymentId' => $payment->id,
                 'studentName' => $payment->student->user->name ?? 'Unknown',
+                'admission_no' => $payment->student->username ?? $payment->student->id,
                 'className' => $payment->student->class->name ?? 'Unknown',
                 'amount' => (float) $payment->paid_amount,
                 'date' => $payment->payment_date,
@@ -669,6 +696,15 @@ class FeeManagementController extends Controller
                 'allocations' => $allocations,
             ];
         });
+
+        if ($perPage) {
+            return response()->json([
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'total' => $paginated->total(),
+                'payments' => $report,
+            ]);
+        }
 
         return response()->json([
             'date' => $startDate === $endDate ? $startDate : null,
