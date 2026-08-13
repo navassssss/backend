@@ -46,4 +46,17 @@ class FeePayment extends Model
     {
         return $this->hasMany(FeePaymentAllocation::class);
     }
+
+    /**
+     * Get the receipt batches this payment belongs to.
+     */
+    public function receiptBatches(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            ReceiptBatch::class,
+            'receipt_batch_payment',
+            'fee_payment_id',
+            'receipt_batch_id'
+        )->withTimestamps();
+    }
 }

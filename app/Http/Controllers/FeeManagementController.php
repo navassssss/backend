@@ -616,22 +616,35 @@ class FeeManagementController extends Controller
      */
     public function getDailyReport(Request $request, $date = null)
     {
-        $startDate = $request->query('start_date', $date ?? $request->query('date', now()->format('Y-m-d')));
+        $startDate = $request->query('start_date', $date ?? $request->query('date'));
         $endDate   = $request->query('end_date', $startDate);
 
-        if ($startDate > $endDate) {
-            $temp = $startDate;
-            $startDate = $endDate;
-            $endDate = $temp;
+        // If no dates are specified and no receipt_issued filter is present, default to today
+        if (!$startDate && !$request->has('receipt_issued')) {
+            $startDate = now()->format('Y-m-d');
+            $endDate = $startDate;
         }
 
-        $payments = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
-            ->whereBetween('payment_date', [$startDate, $endDate])
+        $query = FeePayment::with(['student.user', 'student.class', 'enteredBy', 'allocations'])
             ->where(function ($query) {
                 $query->whereNull('remarks')
                       ->orWhere('remarks', '!=', 'Pre-paid bulk import starting Mar 2026');
-            })
-            ->latest('payment_date')
+            });
+
+        if ($startDate && $endDate) {
+            if ($startDate > $endDate) {
+                $temp = $startDate;
+                $startDate = $endDate;
+                $endDate = $temp;
+            }
+            $query->whereBetween('payment_date', [$startDate, $endDate]);
+        }
+
+        if ($request->has('receipt_issued')) {
+            $query->where('receipt_issued', $request->boolean('receipt_issued'));
+        }
+
+        $payments = $query->latest('payment_date')
             ->latest()
             ->get();
 
@@ -676,5 +689,100 @@ class FeeManagementController extends Controller
     {
         $classes = ClassRoom::select('id', 'name')->get();
         return response()->json($classes);
+    }
+
+    /**
+     * Get all receipt batches.
+     */
+    public function getReceiptBatches(Request $request)
+    {
+        $batches = \App\Models\ReceiptBatch::with(['generatedBy:id,name'])
+            ->withCount('payments')
+            ->latest('generated_at')
+            ->get();
+
+        return response()->json($batches);
+    }
+
+    /**
+     * Create a new receipt batch for printing.
+     */
+    public function createReceiptBatch(Request $request)
+    {
+        $request->validate([
+            'payment_ids' => 'required|array',
+            'payment_ids.*' => 'exists:fee_payments,id',
+        ]);
+
+        return DB::transaction(function () use ($request) {
+            $batch = \App\Models\ReceiptBatch::create([
+                'generated_at' => now(),
+                'generated_by' => $request->user()->id,
+            ]);
+
+            $batch->payments()->attach($request->payment_ids);
+
+            // Mark receipts as issued
+            FeePayment::whereIn('id', $request->payment_ids)->update([
+                'receipt_issued' => true,
+            ]);
+
+            // Fetch the payments with allocations for response
+            $payments = FeePayment::with(['student.user', 'student.class', 'allocations'])
+                ->whereIn('id', $request->payment_ids)
+                ->get();
+
+            return response()->json([
+                'message' => 'Receipt batch created successfully',
+                'batch_id' => $batch->id,
+                'payments' => $this->formatPaymentsForReceipts($payments),
+            ]);
+        });
+    }
+
+    /**
+     * Get a specific receipt batch and its payments.
+     */
+    public function getReceiptBatch($batchId)
+    {
+        $batch = \App\Models\ReceiptBatch::with(['generatedBy:id,name'])->findOrFail($batchId);
+        
+        $payments = $batch->payments()
+            ->with(['student.user', 'student.class', 'allocations'])
+            ->get();
+
+        return response()->json([
+            'batch' => $batch,
+            'payments' => $this->formatPaymentsForReceipts($payments),
+        ]);
+    }
+
+    /**
+     * Helper to format payments for receipt PDF rendering.
+     */
+    private function formatPaymentsForReceipts($payments)
+    {
+        return $payments->map(function ($payment) {
+            $allocations = $payment->allocations->map(function ($allocation) {
+                return [
+                    'year' => $allocation->year,
+                    'month' => $allocation->month,
+                    'month_name' => date('F', mktime(0, 0, 0, $allocation->month, 10)),
+                    'amount' => (float) $allocation->allocated_amount,
+                ];
+            });
+
+            return [
+                'id' => $payment->id,
+                'receipt_no' => 'REC-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT),
+                'student_name' => $payment->student->user->name ?? 'Unknown',
+                'admission_no' => $payment->student->username ?? $payment->student->id,
+                'class_name' => $payment->student->class->name ?? 'Unknown',
+                'paid_amount' => (float) $payment->paid_amount,
+                'payment_date' => $payment->payment_date ? $payment->payment_date->format('Y-m-d') : null,
+                'remarks' => $payment->remarks,
+                'allocations' => $allocations,
+            ];
+        });
     }
 }
