@@ -336,10 +336,10 @@ class FeeManagementService
      * Auto-generates missing fee plans up to the current month.
      * Enforces Class 1 starting from May 2026.
      */
-    public function ensureFeePlans(int $studentId): void
+    public function ensureCurrentMonthPlansExistForStudent(int $studentId): void
     {
         $student = Student::find($studentId);
-        if (!$student || $student->monthly_fee <= 0) {
+        if (!$student || $student->monthly_fee <= 0 || !$student->is_active) {
             return;
         }
 

@@ -857,9 +857,6 @@ class FeeManagementController extends Controller
         });
     }
 
-    /**
-     * Toggle student active status (deactivate / activate student).
-     */
     public function toggleStudentActive(Request $request, $studentId)
     {
         $student = Student::findOrFail($studentId);
@@ -867,6 +864,21 @@ class FeeManagementController extends Controller
         
         $student->is_active = filter_var($isActive, FILTER_VALIDATE_BOOLEAN);
         $student->save();
+
+        if (!$student->is_active) {
+            // Delete any unpaid/pending monthly fee plans for the current month and future months
+            $now = now();
+            \App\Models\MonthlyFeePlan::where('student_id', $student->id)
+                ->where(function($query) use ($now) {
+                    $query->where('year', '>', $now->year)
+                          ->orWhere(function($q) use ($now) {
+                              $q->where('year', $now->year)
+                                ->where('month', '>=', $now->month);
+                          });
+                })
+                ->whereDoesntHave('allocations') // only delete if no payments are allocated to it
+                ->delete();
+        }
 
         return response()->json([
             'message' => $student->is_active ? 'Student activated successfully' : 'Student deactivated successfully',
