@@ -351,7 +351,7 @@ class StudentController extends Controller
                 'department_id' => $departmentId,
                 'username' => $rollObj,
                 'roll_number' => $studentData['roll_number'] ?? null,
-                'joined_at' => $studentData['joined_at'] ?? null,
+                'joined_at' => $studentData['joined_at'] ?? now()->format('Y-m-d'),
                 'total_points' => 0,
                 'wallet_balance' => 0,
                 'opening_balance' => 0,
