@@ -470,7 +470,7 @@ class FeeManagementService
     public function getStudentMonthlyStatus(int $studentId): array
     {
         // Automatically create missing plans before displaying status
-        $this->ensureFeePlans($studentId);
+        $this->ensureCurrentMonthPlansExistForStudent($studentId);
 
         $plans = MonthlyFeePlan::where('student_id', $studentId)
             ->orderBy('year')
