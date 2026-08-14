@@ -321,21 +321,23 @@ class StudentController extends Controller
             }
 
             // 2) CREATE NEW STUDENT
+            $rollNum = (isset($studentData['roll_number']) && trim($studentData['roll_number']) !== '') ? trim($studentData['roll_number']) : null;
+
             // Check if roll_number is taken globally
-            if (!empty($studentData['roll_number'])) {
-                $studentConflict = Student::where('roll_number', $studentData['roll_number'])->exists();
-                $userConflict = \App\Models\User::where('username', $studentData['roll_number'])->exists();
+            if ($rollNum !== null) {
+                $studentConflict = Student::where('roll_number', $rollNum)->exists();
+                $userConflict = \App\Models\User::where('username', $rollNum)->exists();
                 if ($studentConflict || $userConflict) {
-                    return response()->json(['message' => "Admission number {$studentData['roll_number']} is already taken. Please verify your input."], 422);
+                    return response()->json(['message' => "Admission number {$rollNum} is already taken. Please verify your input."], 422);
                 }
             }
 
-            $rollObj = $studentData['roll_number'] ?? ('TEMP' . uniqid());
+            $rollObj = $rollNum ?? ('TEMP' . uniqid());
 
             // Create User safely
             $user = \App\Models\User::create([
                 'name' => $studentData['name'],
-                'username' => $studentData['roll_number'] ?? null,
+                'username' => $rollNum,
                 'email' => 'temp' . uniqid() . '@student.com', // temporary
                 'password' => \Illuminate\Support\Facades\Hash::make($rollObj . '@dhic'),
                 'role' => 'student'
@@ -351,7 +353,7 @@ class StudentController extends Controller
                 'class_id' => $studentData['class_id'] ?? null,
                 'department_id' => $departmentId,
                 'username' => $rollObj,
-                'roll_number' => $studentData['roll_number'] ?? null,
+                'roll_number' => $rollNum,
                 'joined_at' => $studentData['joined_at'] ?? now()->format('Y-m-d'),
                 'total_points' => 0,
                 'wallet_balance' => 0,
