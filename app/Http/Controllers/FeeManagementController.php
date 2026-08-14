@@ -58,7 +58,7 @@ class FeeManagementController extends Controller
             if (!empty($allMatchingIds)) {
                 // Ensure fee plans exist for accuracy
                 foreach ($allMatchingIds as $id) {
-                    $this->feeService->ensureFeePlans($id);
+                    $this->feeService->ensureCurrentMonthPlansExistForStudent($id);
                 }
 
                 $filteredIds = [];
@@ -147,7 +147,7 @@ class FeeManagementController extends Controller
         // Ensure fee plans exist for the visible page (if we didn't already do it for all)
         if ($statusFilter === 'all' && !empty($visibleStudentIds)) {
             foreach ($visibleStudentIds as $id) {
-                $this->feeService->ensureFeePlans($id);
+                $this->feeService->ensureCurrentMonthPlansExistForStudent($id);
             }
         }
 
