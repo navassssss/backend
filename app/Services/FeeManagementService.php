@@ -357,7 +357,10 @@ class FeeManagementService
 
         if (!$latestPlan) {
             // NO plans exist at all
-            if ($student->class_id == 1) { // Class 1 rule
+            if ($student->joined_at) {
+                $startYear = $student->joined_at->year;
+                $startMonth = $student->joined_at->month;
+            } else if ($student->class_id == 1) { // Class 1 rule
                 $startYear = 2026;
                 $startMonth = 5;
             }

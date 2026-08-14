@@ -304,6 +304,7 @@ class StudentController extends Controller
                     'class_id' => $studentData['class_id'] ?? $existingStudent->class_id,
                     'roll_number' => $newRollNumber,
                     'username' => !empty($newRollNumber) ? $newRollNumber : $existingStudent->username,
+                    'joined_at' => $studentData['joined_at'] ?? $existingStudent->joined_at,
                     'department_id' => array_key_exists('department', $studentData) ? $departmentId : $existingStudent->department_id,
                 ]);
 
@@ -349,6 +350,7 @@ class StudentController extends Controller
                 'department_id' => $departmentId,
                 'username' => $rollObj,
                 'roll_number' => $studentData['roll_number'] ?? null,
+                'joined_at' => $studentData['joined_at'] ?? null,
                 'total_points' => 0,
                 'wallet_balance' => 0,
                 'opening_balance' => 0,
