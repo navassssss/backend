@@ -339,6 +339,7 @@ class FeeManagementController extends Controller
                 'username' => $student->username,
                 'class_name' => $student->class->name,
                 'monthly_fee' => (float) $student->monthly_fee,
+                'is_active' => (bool) $student->is_active,
             ],
             'monthly_status' => array_reverse($statusUpToCurrent), // Reverse to show latest months first
             'total_expected' => $totalExpected,
