@@ -22,6 +22,7 @@ class Student extends Model
         'monthly_fee',
         'last_processed_row',
         'is_hifz',
+        'is_active',
     ];
 
     protected $casts = [
@@ -30,6 +31,7 @@ class Student extends Model
         'opening_balance' => 'decimal:2',
         'monthly_fee'     => 'decimal:2',
         'is_hifz'         => 'boolean',
+        'is_active'       => 'boolean',
     ];
 
     protected $appends = ['stars', 'monthly_points', 'name', 'department_name'];
@@ -63,6 +65,18 @@ class Student extends Model
     public function scopeHifz(Builder $query): Builder
     {
         return $query->where('is_hifz', true);
+    }
+
+    /** Only active students. */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
+    /** Only inactive students. */
+    public function scopeInactive(Builder $query): Builder
+    {
+        return $query->where('is_active', false);
     }
 
     // ── Relationships ────────────────────────────────────────────────────────

@@ -28,7 +28,14 @@ class FeeManagementController extends Controller
         $search = $request->input('search', '');
         $statusFilter = $request->input('status', 'all');
         
+        $isActive = $request->input('is_active', 'true');
         $query = Student::with(['user', 'class']);
+
+        if ($isActive === 'true' || $isActive === true || $isActive === '1') {
+            $query->where('is_active', true);
+        } elseif ($isActive === 'false' || $isActive === false || $isActive === '0') {
+            $query->where('is_active', false);
+        }
 
         if ($request->has('class_id')) {
             $query->where('class_id', $request->class_id);
@@ -236,7 +243,7 @@ class FeeManagementController extends Controller
         // Cache for 5 minutes — safe, counts not financial data
         return \Cache::remember($cacheKey, 300, function () use ($search, $classId) {
             // Step 1: get matching student IDs (one query)
-            $query = Student::select('students.id');
+            $query = Student::select('students.id')->where('is_active', true);
             if ($classId) $query->where('class_id', $classId);
             if (!empty($search)) {
                 $query->where(function ($q) use ($search) {
@@ -561,6 +568,7 @@ class FeeManagementController extends Controller
         
         $class    = ClassRoom::findOrFail($classId);
         $students = Student::where('class_id', $classId)
+            ->where('is_active', true)
             ->with('user:id,name')
             ->select('id', 'user_id', 'monthly_fee')
             ->get();
@@ -846,5 +854,22 @@ class FeeManagementController extends Controller
                 'allocations' => $allocations,
             ];
         });
+    }
+
+    /**
+     * Toggle student active status (deactivate / activate student).
+     */
+    public function toggleStudentActive(Request $request, $studentId)
+    {
+        $student = Student::findOrFail($studentId);
+        $isActive = $request->input('is_active', !$student->is_active);
+        
+        $student->is_active = filter_var($isActive, FILTER_VALIDATE_BOOLEAN);
+        $student->save();
+
+        return response()->json([
+            'message' => $student->is_active ? 'Student activated successfully' : 'Student deactivated successfully',
+            'is_active' => $student->is_active,
+        ]);
     }
 }
