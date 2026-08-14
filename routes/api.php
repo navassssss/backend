@@ -213,6 +213,7 @@ Route::get('/issue-categories', [IssueCategoryController::class, 'index']);
     Route::post('/fees/plans/student', [FeeManagementController::class, 'setStudentFeeRange']);
     Route::post('/fees/students/{studentId}/monthly-fee', [FeeManagementController::class, 'updateStudentMonthlyFee']);
     Route::post('/fees/students/{studentId}/reallocate', [FeeManagementController::class, 'reallocatePayments']);
+    Route::post('/fees/students/{studentId}/toggle-active', [FeeManagementController::class, 'toggleStudentActive']);
     
     // Reports
     Route::get('/fees/reports/summary', [FeeManagementController::class, 'getSummary']);
