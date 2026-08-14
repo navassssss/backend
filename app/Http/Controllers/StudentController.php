@@ -273,6 +273,7 @@ class StudentController extends Controller
             'students.*.roll_number' => 'nullable|string',
             'students.*.class_id' => 'nullable|exists:class_rooms,id',
             'students.*.department' => 'nullable|string|max:255',
+            'students.*.joined_at' => 'nullable|date',
         ]);
 
         $createdStudents = [];
