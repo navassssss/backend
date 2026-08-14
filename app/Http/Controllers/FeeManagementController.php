@@ -259,7 +259,7 @@ class FeeManagementController extends Controller
 
             // Ensure plans exist for all matching students before summary
             foreach ($studentIds as $id) {
-                $this->feeService->ensureFeePlans($id);
+                $this->feeService->ensureCurrentMonthPlansExistForStudent($id);
             }
 
             // Step 2: single batch summary (3 queries total)
