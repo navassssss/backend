@@ -866,14 +866,14 @@ class FeeManagementController extends Controller
         $student->save();
 
         if (!$student->is_active) {
-            // Delete any unpaid/pending monthly fee plans for the current month and future months
+            // Delete any unpaid/pending monthly fee plans strictly after the current month (future months only)
             $now = now();
             \App\Models\MonthlyFeePlan::where('student_id', $student->id)
                 ->where(function($query) use ($now) {
                     $query->where('year', '>', $now->year)
                           ->orWhere(function($q) use ($now) {
                               $q->where('year', $now->year)
-                                ->where('month', '>=', $now->month);
+                                ->where('month', '>', $now->month);
                           });
                 })
                 ->whereDoesntHave('allocations') // only delete if no payments are allocated to it
