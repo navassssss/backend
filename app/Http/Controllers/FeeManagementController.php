@@ -517,6 +517,9 @@ class FeeManagementController extends Controller
         $student->monthly_fee = $validated['monthly_fee'];
         $student->save();
 
+        // Ensure plans are generated immediately using their starting month and monthly fee
+        $this->feeService->ensureCurrentMonthPlansExistForStudent($student->id);
+
         return response()->json([
             'message' => 'Student monthly fee updated successfully',
             'monthly_fee' => $student->monthly_fee,
