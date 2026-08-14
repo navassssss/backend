@@ -334,14 +334,23 @@ class StudentController extends Controller
 
             $rollObj = $rollNum ?? ('TEMP' . uniqid());
 
-            // Create User safely
-            $user = \App\Models\User::create([
-                'name' => $studentData['name'],
-                'username' => $rollNum,
-                'email' => 'temp' . uniqid() . '@student.com', // temporary
-                'password' => \Illuminate\Support\Facades\Hash::make($rollObj . '@dhic'),
-                'role' => 'student'
-            ]);
+            // Create User safely with duplicate key exception protection
+            try {
+                $user = \App\Models\User::create([
+                    'name' => $studentData['name'],
+                    'username' => $rollNum,
+                    'email' => 'temp' . uniqid() . '@student.com', // temporary
+                    'password' => \Illuminate\Support\Facades\Hash::make($rollObj . '@dhic'),
+                    'role' => 'student'
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                return response()->json(['message' => "Admission number {$rollNum} is already taken. Please verify your input."], 422);
+            } catch (\Illuminate\Database\QueryException $e) {
+                if ($e->getCode() == 23000 || str_contains($e->getMessage(), '1062')) {
+                    return response()->json(['message' => "Admission number {$rollNum} is already taken. Please verify your input."], 422);
+                }
+                throw $e;
+            }
             
             // Re-generate deterministic unique email
             $cleanName = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $studentData['name']));
