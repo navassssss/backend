@@ -322,9 +322,10 @@ class StudentController extends Controller
             // 2) CREATE NEW STUDENT
             // Check if roll_number is taken globally
             if (!empty($studentData['roll_number'])) {
-                $conflict = Student::where('roll_number', $studentData['roll_number'])->first();
-                if ($conflict) {
-                    return response()->json(['message' => "Admission number {$studentData['roll_number']} is already taken. Please verify your list."], 422);
+                $studentConflict = Student::where('roll_number', $studentData['roll_number'])->exists();
+                $userConflict = \App\Models\User::where('username', $studentData['roll_number'])->exists();
+                if ($studentConflict || $userConflict) {
+                    return response()->json(['message' => "Admission number {$studentData['roll_number']} is already taken. Please verify your input."], 422);
                 }
             }
 
