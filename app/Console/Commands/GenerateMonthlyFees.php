@@ -35,7 +35,7 @@ class GenerateMonthlyFees extends Command
         foreach ($students as $student) {
             try {
                 // This safely creates missing plans up to the current month
-                $feeService->ensureFeePlans($student->id);
+                $feeService->ensureCurrentMonthPlansExistForStudent($student->id);
                 $count++;
             } catch (\Exception $e) {
                 Log::error("Failed to generate fees for student {$student->id}: " . $e->getMessage());

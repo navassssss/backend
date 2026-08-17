@@ -21,7 +21,7 @@ class FeeManagementService
         ?string $remarks = null,
         bool $receiptIssued = false
     ): array {
-        $this->ensureFeePlans($studentId);
+        $this->ensureCurrentMonthPlansExistForStudent($studentId);
 
         DB::beginTransaction();
         
